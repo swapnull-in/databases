@@ -253,6 +253,61 @@
       </div></div>
     </section>
 
+    <!-- 10 · BUFFER POOL -->
+    <section class="phase" data-tab="10 · Buffer Pool">
+      <h2>Pages &amp; the buffer pool — does the working set fit in RAM?</h2>
+      <p class="lede">Disk data lives in fixed-size <strong>pages</strong>; the buffer pool is an in-memory LRU cache of
+        hot pages. A hit is RAM-fast; a miss is a disk read ~<strong>1000× slower</strong>. So the single biggest OLTP
+        question is whether your <em>working set</em> fits in the pool — and a big scan can evict it.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <div><div class="slabel"><span>buffer pool size (% of hot set)</span><b id="bp-pval">50%</b></div><input type="range" id="bp-pool" min="10" max="200" step="10" value="50" /></div>
+          <div><label class="fld">workload</label><div class="seg"><button class="ghost sel" id="bp-skew">skewed (hot set)</button><button class="ghost" id="bp-scan">full scan</button></div></div>
+          <div class="verdict" id="bp-verdict"><span class="dot"></span><span id="bp-vtext">Drag the pool size; switch to a scan to see the cliff.</span></div>
+        </div>
+        <div class="stage">
+          <div style="display:flex; gap:22px; align-items:flex-end; flex-wrap:wrap">
+            <div class="big" id="bp-hit">—<small>hit ratio</small></div>
+            <div class="big" id="bp-lat" style="font-size:22px">—<small>avg latency</small></div>
+          </div>
+          <div><label class="fld">hit ratio as the pool grows (skewed workload)</label><div id="bp-sweep"></div></div>
+          <p class="proof"><b>The proof:</b> on a skewed workload a small pool that just holds the hot pages already hits
+            ~90%+ (locality), and returns diminish past the working set. A full <b>scan</b> larger than the pool thrashes
+            LRU — hit ratio collapses and average latency jumps toward disk speed. Hit ratio, not CPU, sets throughput;
+            "working set fits in RAM" is the #1 OLTP predictor.</p>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- 7 · INDEXES -->
+    <section class="phase" data-tab="7 · Indexes">
+      <h2>Indexes &amp; query optimization — read the plan</h2>
+      <p class="lede">The right index turns an O(N) <strong>seq scan</strong> into an O(log N) <strong>index scan</strong>.
+        Composite indexes only help <strong>left-to-right</strong> (leftmost-prefix); a <strong>covering</strong> index
+        answers from the index alone; and <strong>N+1</strong> is a query-count bug a single batched <code>IN</code>
+        fixes.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <div><label class="fld">table users (1024 rows) · indexes</label>
+            <label class="toggle"><input type="checkbox" id="ix-city" checked /> <code>idx_city</code></label>
+            <label class="toggle" style="margin-top:6px"><input type="checkbox" id="ix-comp" checked /> <code>idx_(city, age)</code></label>
+            <label class="toggle" style="margin-top:6px"><input type="checkbox" id="ix-cover" /> covering <code>(city)→name</code></label>
+          </div>
+          <div><label class="fld">run a query</label><div class="keybtns" id="ix-queries"></div></div>
+          <button class="ghost" id="ix-nplus">▶ N+1 vs batched IN</button>
+          <div class="verdict" id="ix-verdict"><span class="dot"></span><span id="ix-vtext">Toggle indexes and run each query to read the plan.</span></div>
+        </div>
+        <div class="stage">
+          <div class="layer"><h4>EXPLAIN</h4><div id="ix-plan" style="font-family:var(--mono);font-size:13px">—</div></div>
+          <div class="big" id="ix-rows" style="font-size:22px">—<small>rows examined</small></div>
+          <p class="proof"><b>The proof:</b> a filter with no matching index scans all 1024 rows; an index makes it ~10
+            probes. A composite <code>(city, age)</code> serves <code>city=?</code> and <code>city=? AND age=?</code> but
+            NOT <code>age=?</code> alone — you can't skip the leftmost column. A covering index answers without touching
+            the heap. Reading EXPLAIN (Seq Scan vs Index Scan vs Index Only Scan) is the highest-ROI DB skill.</p>
+        </div>
+      </div></div>
+    </section>
+
     <!-- 4 · QUORUMS -->
     <section class="phase" data-tab="4 · Quorums">
       <h2>Replication &amp; quorums — R + W &gt; N</h2>
@@ -305,6 +360,29 @@
       </div></div>
     </section>
 
+    <!-- 8 · SHARDING -->
+    <section class="phase" data-tab="8 · Sharding">
+      <h2>Sharding — resize without a miss storm</h2>
+      <p class="lede"><code>hash(key) % N</code> is simple but rehashes almost <em>everything</em> on a resize. Range,
+        consistent-hashing, and <strong>fixed virtual shards</strong> move only ~1/N. And a hot partition needs
+        <strong>write-sharding</strong> — no rebalancing helps a single overloaded key.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <button class="act" id="sh-remap">▶ Add a node (4 → 5): count keys remapped</button>
+          <div><label class="fld">hot partition</label><div class="seg"><button class="ghost sel" id="sh-hot0">one hot key</button><button class="ghost" id="sh-hot16">write-shard ×16</button></div></div>
+          <div class="verdict" id="sh-verdict"><span class="dot"></span><span id="sh-vtext">Run the resize, then flip write-sharding on the hot key.</span></div>
+        </div>
+        <div class="stage">
+          <div><label class="fld">keys remapped on 4 → 5 (of 10,000)</label><div id="sh-bars"></div></div>
+          <div><label class="fld">writes per shard · one celebrity key</label><div id="sh-shards"></div></div>
+          <p class="proof"><b>The proof:</b> hash-mod remaps ~80% of keys (a cache-wide miss storm); range and consistent
+            hashing move ~1/N. <b>Virtual shards</b> (256 fixed vshards → nodes) move whole vshards — ~1/N of keys, with
+            <em>zero</em> keys individually rehashed, which is how Vitess/Citus rebalance. A hot key still hotspots one
+            shard until you write-shard it across suffixed sub-keys (scatter-gather on read).</p>
+        </div>
+      </div></div>
+    </section>
+
     <!-- 6 · TRANSACTIONS -->
     <section class="phase" data-tab="6 · Transactions">
       <h2>Transactions — MVCC, snapshots &amp; the lost update</h2>
@@ -327,6 +405,32 @@
       </div></div>
     </section>
 
+    <!-- 9 · ISOLATION -->
+    <section class="phase" data-tab="9 · Isolation Levels">
+      <h2>Isolation levels — the anomaly ladder</h2>
+      <p class="lede">Each level forbids one more anomaly for a price. Reproduce each with a concrete interleaving of two
+        transactions, then read the ladder: name the anomaly you can't tolerate, and pick the <em>weakest</em> level that
+        forbids it.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <button class="ghost" id="an-dirty">Dirty read</button>
+          <button class="ghost" id="an-nonrep">Non-repeatable read</button>
+          <button class="ghost" id="an-phantom">Phantom read</button>
+          <button class="ghost" id="an-skew">Write skew</button>
+          <div class="verdict" id="an-verdict"><span class="dot"></span><span id="an-vtext">Pick an anomaly to see the interleaving and the level that forbids it.</span></div>
+        </div>
+        <div class="stage">
+          <div class="layer"><h4>interleaving</h4><div id="an-steps" class="log-list">—</div></div>
+          <div><label class="fld">the ladder · ✓ forbidden · ✗ still allowed</label>
+            <table><thead><tr><th>level</th><th>dirty</th><th>non-rep</th><th>phantom</th><th>write&nbsp;skew</th></tr></thead><tbody id="an-ladder"></tbody></table></div>
+          <p class="proof"><b>The proof:</b> READ COMMITTED kills dirty reads; SNAPSHOT / REPEATABLE READ gives a stable
+            snapshot (no non-repeatable reads) but <b>still allows write skew</b>; SERIALIZABLE forbids everything
+            (SSI aborts one of a conflicting pair — watch for 40001 retries). Postgres REPEATABLE READ is snapshot
+            isolation, so "exactly one of N" invariants need SERIALIZABLE or explicit locks.</p>
+        </div>
+      </div></div>
+    </section>
+
     <div class="side-foot" style="margin-top:24px; padding-top:22px; border-top:1px solid var(--line); text-align:center">Browser port of the <code style="font-size:10px">src/phase*</code> scripts · same engines · MIT</div>
     </div><!-- /main-inner -->
   </main>
@@ -341,9 +445,11 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const closeNav = () => appEl.classList.remove('nav-open');
 const TIER_OF = {
   'overview':'Overview',
-  '1-lsm-tree':'Storage engines', '2-wal':'Storage engines', '3-b-tree-vs-lsm':'Storage engines',
+  '1-lsm-tree':'Storage engines', '2-wal':'Storage engines', '3-b-tree-vs-lsm':'Storage engines', '10-buffer-pool':'Storage engines',
+  '7-indexes':'Indexes & queries',
   '4-quorums':'Replication', '5-dynamo-ring':'Replication',
-  '6-transactions':'Transactions',
+  '8-sharding':'Sharding & scale',
+  '6-transactions':'Transactions', '9-isolation':'Transactions',
 };
 navEl.setAttribute('role','tablist'); navEl.setAttribute('aria-orientation','vertical');
 let curTier=null, groupEl=null;
@@ -484,6 +590,87 @@ function verdict(sel,tsel,kind,text){ const v=$(sel); v.className='verdict '+kin
       <div class="kv"><span>T2 re-reads 150, commits 150+30</span><b style="color:var(--good)">180 ✓</b></div>`);
     verdict('#tx-verdict','#tx-vtext','ok','The lost update: both read 100, so a blind write clobbers the other → 130. A conditional commit (reject if the row changed since you read it) makes T2 abort and retry on the fresh value → 180.'); };
   $('#tx-mvcc').click();
+})();
+
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function fnv(s){ let h=2166136261>>>0; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619)>>>0; } return h>>>0; }
+
+/* ══ 10 · BUFFER POOL ══ */
+(function(){
+  const P=1000, HOT=100, ACC=5000, HITL=0.1, MISSL=100;
+  const zipf=()=>{ const rnd=mulberry32(7); const w=[]; let W=0; for(let i=1;i<=P;i++){ const x=1/Math.pow(i,1.1); w.push(x); W+=x; } const seq=[]; for(let t=0;t<ACC;t++){ let r=rnd()*W,i=0; while(r>w[i]){ r-=w[i]; i++; } seq.push(i); } return seq; };
+  const scan=()=>{ const seq=[]; for(let t=0;t<ACC;t++) seq.push(t%P); return seq; };
+  const lru=(seq,B)=>{ const pool=new Map(); let hits=0; for(const pg of seq){ if(pool.has(pg)){ hits++; pool.delete(pg); pool.set(pg,1); } else { pool.set(pg,1); if(pool.size>B) pool.delete(pool.keys().next().value); } } return hits/seq.length; };
+  let mode='skew';
+  const setM=m=>{ mode=m; $('#bp-skew').classList.toggle('sel',m==='skew'); $('#bp-scan').classList.toggle('sel',m==='scan'); render(); };
+  $('#bp-skew').onclick=()=>setM('skew'); $('#bp-scan').onclick=()=>setM('scan');
+  function render(){ const pct=+$('#bp-pool').value; $('#bp-pval').textContent=pct+'%'; const B=Math.max(1,Math.round(HOT*pct/100));
+    const hit=lru(mode==='skew'?zipf():scan(),B); const lat=hit*HITL+(1-hit)*MISSL;
+    $('#bp-hit').innerHTML=(hit*100).toFixed(0)+'%<small>hit ratio</small>'; $('#bp-lat').innerHTML=lat.toFixed(1)+'µs<small>avg latency</small>';
+    const sk=zipf(); const rows=[5,20,50,100,200].map(p=>({p,h:lru(sk,Math.max(1,Math.round(HOT*p/100)))})); const mx=Math.max(...rows.map(r=>r.h));
+    $('#bp-sweep').innerHTML=rows.map(r=>`<div class="barrow"><span>${r.p}% pool</span><div class="bar"><span style="width:${r.h/mx*100}%"></span></div><span>${(r.h*100).toFixed(0)}%</span></div>`).join('');
+    if(mode==='scan') verdict('#bp-verdict','#bp-vtext','bad',`Full scan touches every page once per pass, so a ${pct}%-of-hot-set pool thrashes → hit ratio <b>${(hit*100).toFixed(0)}%</b>, latency <b>${lat.toFixed(0)}µs</b> (toward disk speed). The scan evicted the hot set.`);
+    else verdict('#bp-verdict','#bp-vtext','ok',`Skewed workload, pool = ${pct}% of the hot set → hit ratio <b>${(hit*100).toFixed(0)}%</b>, avg latency <b>${lat.toFixed(1)}µs</b>. Locality means a small pool already wins; returns diminish past 100%.`); }
+  $('#bp-pool').oninput=render; setM('skew');
+})();
+
+/* ══ 7 · INDEXES ══ */
+(function(){
+  const N=1024, LOGN=Math.ceil(Math.log2(N)), MATCH=96;
+  const Q=[
+    {label:'id = 42', run:()=>({plan:'Index Scan using users_pkey  (id = 42)', rows:LOGN, ok:true, note:'primary-key index → O(log N) lookup.'})},
+    {label:"city = 'NYC'", run:()=>{ const idx=$('#ix-city').checked||$('#ix-comp').checked; if(!idx) return {plan:'Seq Scan on users  (Filter: city = NYC)', rows:N, ok:false, note:'No index on city → scans all 1024 rows.'};
+      if($('#ix-cover').checked) return {plan:'Index Only Scan using idx_city_covering  (city = NYC)', rows:MATCH, ok:true, note:'Covering index answers from the index alone — 0 heap fetches.'};
+      return {plan:'Index Scan using '+($('#ix-comp').checked?'idx_city_age':'idx_city')+'  (city = NYC)  + heap fetch', rows:MATCH, ok:true, note:'Index finds the rows, then fetches each from the heap.'}; }},
+    {label:"city='NYC' AND age=30", run:()=>{ if($('#ix-comp').checked) return {plan:'Index Scan using idx_city_age  (city = NYC AND age = 30)', rows:LOGN, ok:true, note:'The composite index serves both columns, left-to-right.'};
+      if($('#ix-city').checked) return {plan:'Index Scan using idx_city  (city = NYC)  + Filter: age = 30', rows:MATCH, ok:true, note:'Index on city narrows it; age filtered in the heap.'};
+      return {plan:'Seq Scan on users', rows:N, ok:false, note:'No usable index.'}; }},
+    {label:'age = 30 (alone)', run:()=>({plan:'Seq Scan on users  (Filter: age = 30)', rows:N, ok:false, note:'⚠ The composite (city, age) can’t skip its leftmost column — a query on age alone can’t use it. Leftmost-prefix rule.'})},
+  ];
+  const box=$('#ix-queries'); Q.forEach(q=>{ const b=el('button','ghost'); b.textContent=q.label; b.onclick=()=>{ const r=q.run(); $('#ix-plan').innerHTML=r.plan; $('#ix-rows').innerHTML=r.rows+'<small>rows examined</small>'; verdict('#ix-verdict','#ix-vtext',r.ok?'ok':'bad',r.note); }; box.appendChild(b); });
+  $('#ix-nplus').onclick=()=>{ $('#ix-plan').innerHTML='N+1: 1 query for 4 orders, then 4 queries for their users<br>batched: 1 query for orders + 1 <code>WHERE id IN (…)</code>'; $('#ix-rows').innerHTML='5 → 2<small>queries issued</small>'; verdict('#ix-verdict','#ix-vtext','ok','N+1 issues 1 + N queries (here 5); a single batched <code>IN</code> makes it 2 — same rows, far fewer round-trips.'); };
+})();
+
+/* ══ 8 · SHARDING ══ */
+(function(){
+  const KEYS=Array.from({length:10000},(_,i)=>'key:'+i);
+  const hashmod=(k,n)=>fnv(k)%n;
+  const kid=k=>parseInt(k.split(':')[1]);
+  const range4=k=>Math.min(3,Math.floor(kid(k)/2500));                    // fixed ranges [0,2500),[2500,5000),…
+  const range5=k=>{ const id=kid(k); return id<7500?Math.floor(id/2500):(id<8750?3:4); }; // split the last range → only its tail moves
+  function ring(nodes){ const r=[]; nodes.forEach(nd=>{ for(let v=0;v<160;v++) r.push({h:fnv(nd+'#'+v),nd}); }); r.sort((a,b)=>a.h-b.h); return r; }
+  function ringNode(r,k){ const h=fnv(k); let lo=0,hi=r.length; while(lo<hi){ const m=(lo+hi)>>1; if(r[m].h<h) lo=m+1; else hi=m; } return r[lo%r.length].nd; }
+  const vlabel=k=>'vshard#'+(fnv(k)%256);                                 // key → one of 256 fixed vshards
+  const remap=(a,b)=>{ let m=0; for(const k of KEYS) if(a(k)!==b(k)) m++; return m/KEYS.length*100; };
+  $('#sh-remap').onclick=()=>{
+    const hm=remap(k=>hashmod(k,4),k=>hashmod(k,5)); const rg=remap(range4,range5);
+    const r4=ring(['A','B','C','D']), r5=ring(['A','B','C','D','E']); const ch=remap(k=>ringNode(r4,k),k=>ringNode(r5,k));
+    const vs=remap(k=>ringNode(r4,vlabel(k)), k=>ringNode(r5,vlabel(k)));  // vshards placed on the ring → ~1/N move, 0 keys rehashed
+    const rows=[{l:'hash % N',v:hm},{l:'range',v:rg},{l:'consistent hash',v:ch},{l:'virtual shards',v:vs}]; const mx=100;
+    $('#sh-bars').innerHTML=rows.map(r=>`<div class="barrow${r.v>40?' bad':''}"><span>${r.l}</span><div class="bar"><span style="width:${r.v/mx*100}%"></span></div><span>${r.v.toFixed(1)}%</span></div>`).join('');
+    verdict('#sh-verdict','#sh-vtext','ok',`hash-mod remaps <b>${hm.toFixed(0)}%</b> (miss storm); range ${rg.toFixed(0)}%, consistent ${ch.toFixed(0)}%, virtual shards ${vs.toFixed(0)}% — and vshards rehash <b>0</b> keys individually (whole vshards move).`); };
+  function hot(mult){ const S=8, sh=new Array(S).fill(0); for(let i=0;i<10000;i++) sh[fnv('bg'+i)%S]+=4;
+    if(mult===1) sh[fnv('celebrity')%S]+=60000; else for(let i=0;i<60000;i++) sh[fnv('celebrity#'+(i%mult))%S]++; return sh; }
+  function hotRender(sh){ const mx=Math.max(...sh); $('#sh-shards').innerHTML=sh.map((v,i)=>`<div class="dnode${v>=mx&&mx>15000?' down':''}" style="flex:1 1 66px"><div class="did" style="font-size:11px">shard ${i}</div><div class="dv">${v.toLocaleString()}</div></div>`).join(''); }
+  const setHot=m=>{ $('#sh-hot0').classList.toggle('sel',m===1); $('#sh-hot16').classList.toggle('sel',m===16); const sh=hot(m); hotRender(sh); const mx=Math.max(...sh), avg=sh.reduce((a,b)=>a+b)/8, ratio=mx/avg;
+    verdict('#sh-verdict','#sh-vtext',m===1?'bad':'ok', m===1?`One celebrity key sends all its writes to <b>shard ${sh.indexOf(mx)}</b> → ${mx.toLocaleString()} writes, hot ratio <b>${ratio.toFixed(1)}×</b>.`:`Write-sharded across 16 sub-keys → peak shard ${mx.toLocaleString()}, hot ratio <b>${ratio.toFixed(1)}×</b>; reads scatter-gather the 16.`); };
+  $('#sh-hot0').onclick=()=>setHot(1); $('#sh-hot16').onclick=()=>setHot(16);
+  setHot(1); $('#sh-remap').click();
+})();
+
+/* ══ 9 · ISOLATION ══ */
+(function(){
+  const A={
+    dirty:{ steps:['T2 writes x = 200 (uncommitted)','T1 reads x → <b>200</b>  ← dirty read of uncommitted data','T2 ROLLS BACK → x is 100 again','T1 acted on a value that never existed ❌'], forbid:'READ COMMITTED' },
+    nonrep:{ steps:['T1 reads x → <b>100</b>','T2 writes x = 200 and COMMITS','T1 reads x again → <b>200</b>  ← changed within one transaction ❌'], forbid:'REPEATABLE READ / SNAPSHOT' },
+    phantom:{ steps:['T1: SELECT count(*) WHERE color=red → <b>2</b>','T2 inserts a red row and COMMITS','T1 re-runs the count → <b>3</b>  ← a phantom row appeared ❌'], forbid:'SERIALIZABLE (range locks / SSI)' },
+    skew:{ steps:['both doctors read "2 on call" (same snapshot)','T1 sets Alice off; T2 sets Bob off — different rows','both commit → <b>0 on call</b>  ← invariant broken ❌'], forbid:'SERIALIZABLE only (snapshot allows it)' },
+  };
+  const show=k=>{ const a=A[k]; $('#an-steps').innerHTML=a.steps.map((s,i)=>`<div>${i+1}. ${s}</div>`).join(''); verdict('#an-verdict','#an-vtext','warn',`Forbidden by <b>${a.forbid}</b>.`); };
+  ['dirty','nonrep','phantom','skew'].forEach(k=>$('#an-'+k).onclick=()=>show(k));
+  const levels=[['READ UNCOMMITTED',['✗','✗','✗','✗']],['READ COMMITTED',['✓','✗','✗','✗']],['REPEATABLE READ / SNAPSHOT',['✓','✓','✗','✗']],['SERIALIZABLE',['✓','✓','✓','✓']]];
+  $('#an-ladder').innerHTML=levels.map(([l,c])=>`<tr><td>${l}</td>${c.map(x=>`<td style="color:${x==='✓'?'var(--good)':'var(--bad)'}">${x}</td>`).join('')}</tr>`).join('');
+  show('dirty');
 })();
 </script>
 </body>

@@ -34,6 +34,10 @@ Each prints a timestamped log so you can watch the engine work.
 | `npm run phase4` | **Quorums** — R + W > N tunable consistency, stale vs fresh reads | replication |
 | `npm run phase5` | **Dynamo-style** — consistent hashing, hinted handoff, read repair, LWW | partitioning |
 | `npm run phase6` | **Transactions** — MVCC snapshot isolation, lost update, the contention ladder | transactions |
+| `npm run phase7`  | **Indexes** — seq vs index scan, composite/leftmost-prefix, covering, N+1 vs IN | indexing |
+| `npm run phase8`  | **Sharding** — hash/range/consistent/virtual-shards remap; hot-partition write-sharding | scale |
+| `npm run phase9`  | **Isolation levels** — dirty/non-repeatable/phantom/write-skew and the ladder | transactions |
+| `npm run phase10` | **Buffer pool** — pages, LRU, hit ratio vs pool size, the scan cliff | storage engine |
 
 Start by reading `src/phase1/lsm.ts` — the whole storage engine in ~100
 commented lines.
