@@ -11,6 +11,9 @@
     "phase4": "node src/phase4/quorums.ts",
     "phase5": "node src/phase5/dynamo.ts",
     "phase6": "node src/phase6/transactions.ts",
+    "phase8": "node src/phase8/sharding.ts",
+    "web": "node web/serve.mjs",
+    "deploy": "npx wrangler pages deploy web --project-name databases",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": { "typescript": "^5.7.0", "@types/node": "^22.10.0" }

@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Databases — Storage Lab</title>
+<meta name="description" content="An interactive lab for database internals: LSM-trees, write-ahead logs, B-tree vs LSM amplification, quorums, Dynamo-style replication, and MVCC transactions." />
+<meta name="theme-color" content="#faf9f6" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0d0d13" media="(prefers-color-scheme: dark)" />
+<link rel="preload" href="fonts/space-grotesk-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="fonts/ibm-plex-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+<style>
+  @font-face { font-family:"Space Grotesk"; font-style:normal; font-weight:500; font-display:swap; src:url(fonts/space-grotesk-latin-500-normal.woff2) format("woff2"); }
+  @font-face { font-family:"Space Grotesk"; font-style:normal; font-weight:600; font-display:swap; src:url(fonts/space-grotesk-latin-600-normal.woff2) format("woff2"); }
+  @font-face { font-family:"Space Grotesk"; font-style:normal; font-weight:700; font-display:swap; src:url(fonts/space-grotesk-latin-700-normal.woff2) format("woff2"); }
+  @font-face { font-family:"IBM Plex Sans"; font-style:normal; font-weight:400; font-display:swap; src:url(fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2"); }
+  @font-face { font-family:"IBM Plex Sans"; font-style:normal; font-weight:500; font-display:swap; src:url(fonts/ibm-plex-sans-latin-500-normal.woff2) format("woff2"); }
+  @font-face { font-family:"IBM Plex Sans"; font-style:normal; font-weight:600; font-display:swap; src:url(fonts/ibm-plex-sans-latin-600-normal.woff2) format("woff2"); }
+  @font-face { font-family:"IBM Plex Mono"; font-style:normal; font-weight:400; font-display:swap; src:url(fonts/ibm-plex-mono-latin-400-normal.woff2) format("woff2"); }
+  @font-face { font-family:"IBM Plex Mono"; font-style:normal; font-weight:500; font-display:swap; src:url(fonts/ibm-plex-mono-latin-500-normal.woff2) format("woff2"); }
+  :root {
+    --bg:#faf9f6; --panel:#ffffff; --panel-2:#f4f2ec; --sidebar-bg:#f4f2ec; --hover:#ebe9e1;
+    --ink:#191a20; --muted:#6c6d78; --line:#e7e3da;
+    --accent:#4b3bff; --accent-soft:#ecebff; --amber:#b96608; --amber-soft:#fbeed6;
+    --good:#0f9d6a; --good-soft:#e0f2ea; --warn:#b96608; --warn-soft:#fbeed6; --bad:#dd4650; --bad-soft:#fbe4e6; --info:#2f6db0;
+    --shadow:0 1px 2px rgba(24,20,40,.04), 0 10px 30px -16px rgba(24,20,40,.18);
+    --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans:"IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --display:"Space Grotesk", var(--sans);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#0d0d13; --panel:#16161e; --panel-2:#1d1d27; --sidebar-bg:#0a0a10; --hover:#20202c;
+      --ink:#ecebf2; --muted:#9698a6; --line:#282833;
+      --accent:#907fff; --accent-soft:#211f36; --amber:#f0b45a; --amber-soft:#2a2216;
+      --good:#40d98c; --good-soft:#12261e; --warn:#f0b45a; --warn-soft:#2a2216; --bad:#ff6b72; --bad-soft:#2a141a; --info:#6ea8e0;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 14px 34px -18px rgba(0,0,0,.7);
+    }
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; }
+  body { background:var(--bg); color:var(--ink); font-family:var(--sans); line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .num, code, .mono { font-variant-numeric:tabular-nums; }
+  .app { display:flex; align-items:flex-start; min-height:100vh; }
+  .sidebar { position:sticky; top:0; height:100vh; width:270px; flex:none; z-index:40; display:flex; flex-direction:column; overflow-y:auto; padding:20px 14px 16px; background:var(--sidebar-bg); border-right:1px solid var(--line); }
+  .brand { display:flex; align-items:center; gap:11px; padding:4px 10px 16px; margin-bottom:6px; border-bottom:1px solid var(--line); }
+  .glyph { width:32px; height:32px; flex:none; border-radius:9px; background:var(--accent); display:grid; place-items:center; color:#fff; font-family:var(--mono); font-size:16px; box-shadow:0 5px 14px -5px color-mix(in srgb, var(--accent) 60%, transparent); }
+  .brand .wm { display:flex; flex-direction:column; line-height:1.25; }
+  .brand .wm b { font-family:var(--display); font-weight:600; font-size:14.5px; letter-spacing:-.01em; }
+  .brand .wm span { font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); }
+  nav.nav { display:flex; flex-direction:column; }
+  .nav-group { margin-top:13px; }
+  .nav-group-label { font-family:var(--mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--muted); padding:0 11px 6px; }
+  .nav-item { display:flex; align-items:center; gap:11px; width:100%; text-align:left; cursor:pointer; background:none; border:none; font-family:var(--sans); font-size:13.5px; color:var(--muted); padding:7px 11px; border-radius:8px; transition:.12s; line-height:1.3; }
+  .nav-item .n { font-family:var(--mono); font-size:11px; color:color-mix(in srgb, var(--muted) 75%, transparent); min-width:15px; text-align:right; }
+  .nav-item:hover { background:var(--hover); color:var(--ink); }
+  .nav-item.active { background:var(--accent-soft); color:var(--accent); font-weight:500; }
+  .nav-item.active .n { color:var(--accent); }
+  .side-foot { margin-top:auto; padding:15px 11px 2px; font-family:var(--mono); font-size:11px; line-height:1.7; color:var(--muted); }
+  .side-foot a { color:var(--muted); text-decoration:none; border-bottom:1px solid var(--line); }
+  .side-foot a:hover { color:var(--accent); border-color:var(--accent); }
+  .main { flex:1; min-width:0; padding:42px clamp(24px,4vw,60px) 100px; }
+  .main-inner { max-width:940px; margin:0 auto; }
+  .topbar, .backdrop { display:none; }
+  .hero-eyebrow { font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--accent); margin:0 0 14px; }
+  .hero h1 { font-family:var(--display); font-weight:600; font-size:clamp(31px,4.6vw,47px); margin:0 0 16px; letter-spacing:-.026em; line-height:1.03; max-width:17ch; }
+  .hero h1 em { font-style:normal; color:var(--accent); }
+  .hero p { color:var(--muted); margin:0; max-width:62ch; font-size:16.5px; line-height:1.6; }
+  .hero p strong { color:var(--ink); font-weight:600; }
+  .levers { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px,1fr)); gap:12px; margin:30px 0 4px; }
+  .lever { background:var(--panel); border:1px solid var(--line); border-radius:13px; padding:15px 16px; box-shadow:var(--shadow); }
+  .lever b { font-family:var(--display); font-weight:600; font-size:14px; display:block; margin-bottom:4px; }
+  .lever span { font-size:12.5px; color:var(--muted); line-height:1.5; }
+  .overview-hint { font-size:14.5px; color:var(--muted); margin:24px 0 0; line-height:1.6; max-width:64ch; }
+  .overview-hint b { color:var(--ink); font-weight:600; }
+  section.phase { display:none; }
+  section.phase.active { display:block; animation:fade .22s ease; }
+  @keyframes fade { from { opacity:0; transform:translateY(5px); } to { opacity:1; } }
+  .phase h2 { font-family:var(--display); font-weight:600; font-size:25px; margin:0 0 6px; letter-spacing:-.02em; }
+  .phase .lede { color:var(--muted); margin:0 0 20px; max-width:76ch; font-size:15.5px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:20px 22px; margin-bottom:16px; box-shadow:var(--shadow); }
+  .lab { display:grid; grid-template-columns:250px 1fr; gap:22px; align-items:start; }
+  @media (max-width:720px){ .lab { grid-template-columns:1fr; } }
+  .controls { display:flex; flex-direction:column; gap:11px; }
+  .stage { min-width:0; display:flex; flex-direction:column; gap:14px; }
+  label.fld { display:block; font-family:var(--mono); font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); margin-bottom:6px; }
+  input[type=range] { width:100%; accent-color:var(--accent); height:4px; }
+  .slabel { display:flex; justify-content:space-between; align-items:baseline; font-family:var(--mono); font-size:12px; color:var(--muted); margin-bottom:4px; }
+  .slabel b { color:var(--ink); font-size:14px; }
+  button.act { font-family:var(--sans); font-size:13px; background:var(--accent); color:#fff; border:none; padding:9px 14px; border-radius:9px; cursor:pointer; font-weight:500; text-align:left; box-shadow:0 4px 12px -5px color-mix(in srgb, var(--accent) 60%, transparent); transition:.14s; }
+  button.act:hover { filter:brightness(1.06); }
+  button.ghost { font-family:var(--sans); font-size:13px; background:var(--panel-2); color:var(--ink); border:1px solid var(--line); padding:8px 12px; border-radius:9px; cursor:pointer; text-align:left; }
+  button.ghost:hover { border-color:var(--accent); }
+  button.ghost.sel { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+  .seg { display:flex; gap:6px; flex-wrap:wrap; } .seg button { flex:1 1 auto; }
+  .keybtns { display:flex; gap:6px; flex-wrap:wrap; } .keybtns button { font-family:var(--mono); font-size:12.5px; padding:7px 10px; }
+  .nav-item:focus-visible, input:focus-visible, button:focus-visible, a:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .verdict { font-family:var(--mono); font-size:13px; border-radius:9px; padding:11px 13px; border:1px solid var(--line); display:flex; gap:10px; align-items:baseline; background:var(--panel-2); }
+  .verdict .dot { width:9px; height:9px; border-radius:50%; flex:none; translate:0 2px; background:var(--muted); }
+  .verdict.ok { background:var(--good-soft); border-color:color-mix(in srgb,var(--good) 40%,transparent); } .verdict.ok .dot { background:var(--good); }
+  .verdict.bad { background:var(--bad-soft); border-color:color-mix(in srgb,var(--bad) 40%,transparent); } .verdict.bad .dot { background:var(--bad); }
+  .verdict.warn { background:var(--warn-soft); border-color:color-mix(in srgb,var(--warn) 40%,transparent); } .verdict.warn .dot { background:var(--warn); }
+  .proof { font-size:13px; color:var(--muted); border-left:3px solid var(--accent); padding:8px 0 8px 13px; margin-top:2px; background:linear-gradient(90deg, var(--accent-soft), transparent 80%); border-radius:0 8px 8px 0; }
+  .proof b { color:var(--ink); }
+  code { font-family:var(--mono); background:var(--accent-soft); color:var(--accent); padding:1px 5px; border-radius:5px; font-size:.88em; }
+  .chip { display:inline-block; font-family:var(--mono); font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); }
+  .chip.good { color:var(--good); border-color:color-mix(in srgb,var(--good) 45%,transparent); background:var(--good-soft); }
+  .chip.bad { color:var(--bad); border-color:color-mix(in srgb,var(--bad) 45%,transparent); background:var(--bad-soft); }
+  .big { font-family:var(--mono); font-size:26px; font-variant-numeric:tabular-nums; }
+  .big small { font-size:11px; color:var(--muted); font-family:var(--mono); text-transform:uppercase; letter-spacing:.06em; display:block; }
+  .cells { display:flex; gap:5px; flex-wrap:wrap; }
+  .cell { font-family:var(--mono); font-size:12.5px; padding:5px 9px; border-radius:8px; border:1px solid var(--line); background:var(--panel-2); }
+  .cell.tomb { color:var(--bad); border-color:color-mix(in srgb,var(--bad) 40%,transparent); background:var(--bad-soft); text-decoration:line-through; }
+  .cell.hit { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+  .layer { border:1px solid var(--line); border-radius:9px; padding:9px 11px; background:var(--panel-2); margin-bottom:6px; }
+  .layer h4 { margin:0 0 6px; font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+  .log-list { font-family:var(--mono); font-size:12px; line-height:1.8; }
+  .barrow { display:grid; grid-template-columns:150px 1fr 64px; align-items:center; gap:10px; margin:6px 0; font-family:var(--mono); font-size:12.5px; }
+  .barrow .bar { height:16px; background:var(--accent-soft); border-radius:5px; overflow:hidden; }
+  .barrow .bar > span { display:block; height:100%; background:var(--accent); transition:width .3s; }
+  .barrow.bad .bar > span { background:var(--bad); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--line); font-family:var(--mono); }
+  th { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:500; }
+  tbody tr:last-child td { border-bottom:none; }
+  .kv { display:flex; justify-content:space-between; font-family:var(--mono); font-size:13px; padding:5px 0; border-bottom:1px solid var(--line); }
+  .kv b { font-size:15px; }
+  .nodes { display:flex; gap:10px; flex-wrap:wrap; }
+  .dnode { flex:1 1 100px; border:1px solid var(--line); border-radius:10px; padding:10px 11px; background:var(--panel-2); font-family:var(--mono); font-size:11.5px; }
+  .dnode.pref { border-color:var(--accent); }
+  .dnode.down { opacity:.5; border-style:dashed; border-color:var(--bad); }
+  .dnode .did { font-size:14px; font-weight:600; }
+  .dnode .dv { margin-top:4px; }
+  .dnode .hint { color:var(--amber); }
+  @media (max-width:880px) {
+    .app { display:block; }
+    .topbar { display:flex; align-items:center; gap:11px; position:sticky; top:0; z-index:30; padding:11px 16px; background:color-mix(in srgb,var(--bg) 88%,transparent); backdrop-filter:saturate(1.5) blur(10px); border-bottom:1px solid var(--line); }
+    .topbar b { font-family:var(--display); font-weight:600; font-size:15.5px; }
+    .hamburger { margin-left:auto; display:grid; place-items:center; width:38px; height:38px; border:1px solid var(--line); border-radius:9px; background:var(--panel); color:var(--ink); cursor:pointer; font-family:var(--mono); font-size:17px; }
+    .sidebar { position:fixed; top:0; left:0; height:100dvh; width:286px; transform:translateX(-100%); transition:transform .22s ease; box-shadow:0 0 70px rgba(0,0,0,.28); }
+    .app.nav-open .sidebar { transform:none; }
+    .backdrop { display:block; position:fixed; inset:0; z-index:39; background:rgba(0,0,0,.42); opacity:0; pointer-events:none; transition:opacity .22s; }
+    .app.nav-open .backdrop { opacity:1; pointer-events:auto; }
+    .main { padding:22px 18px 84px; }
+    .lab { grid-template-columns:1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior:auto !important; animation:none !important; transition:none !important; } }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><span class="glyph">▤</span><span class="wm"><b>Storage Lab</b><span>Databases</span></span></div>
+    <nav class="nav" id="nav" aria-label="Lessons"></nav>
+    <div class="side-foot">Every panel is also a runnable <code style="font-size:10px">npm run phaseN</code>.<br /><a href="https://github.com/swapnull-in/databases" target="_blank" rel="noopener">View source ↗</a></div>
+  </aside>
+  <div class="backdrop" id="backdrop"></div>
+  <main class="main">
+    <div class="topbar"><span class="glyph">▤</span><b>Storage Lab</b><button class="hamburger" id="hamburger" aria-label="Toggle navigation">≡</button></div>
+    <div class="main-inner">
+
+    <!-- OVERVIEW -->
+    <section class="phase" data-tab="Overview">
+      <div class="hero">
+        <p class="hero-eyebrow">Databases · Storage Lab</p>
+        <h1>Open the database <em>and look inside</em>.</h1>
+        <p>Under every database is a storage engine answering two questions — where do writes go, and how do reads
+          find them — and a replication + transaction layer that keeps copies honest. Build each from scratch and
+          poke it: flush an LSM, crash and recover through a WAL, tune a quorum, heal a Dynamo ring, race two
+          transactions.</p>
+      </div>
+      <div class="levers">
+        <div class="lever"><b>Storage engines</b><span>LSM-trees, the write-ahead log, and B-tree vs LSM amplification.</span></div>
+        <div class="lever"><b>Replication</b><span>Tunable quorums and Dynamo-style leaderless replication.</span></div>
+        <div class="lever"><b>Transactions</b><span>MVCC snapshots, the lost update, and the contention ladder.</span></div>
+      </div>
+      <p class="overview-hint"><b>Pick a lesson in the sidebar.</b> The through-line: durability is a log, reads are a
+        merge, and consistency is a dial (R + W > N) — everything else is a tradeoff you tune, not a default.</p>
+    </section>
+
+    <!-- 1 · LSM -->
+    <section class="phase" data-tab="1 · LSM-tree">
+      <h2>The LSM-tree — never write randomly to disk</h2>
+      <p class="lede">Writes land in an in-memory sorted <strong>memtable</strong>; when it fills it flushes to an
+        immutable sorted <strong>SSTable</strong>. Reads check newest→oldest. Deletes write a <strong>tombstone</strong>.
+        <strong>Compaction</strong> merges the files, keeping the newest value and dropping tombstones.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <div><label class="fld">put a key (flush every 3)</label><div class="keybtns" id="lsm-puts"></div></div>
+          <div><label class="fld">delete</label><div class="keybtns" id="lsm-dels"></div></div>
+          <button class="act" id="lsm-compact">⚙ Compact</button>
+          <button class="ghost" id="lsm-reset">↺ Reset</button>
+          <div><label class="fld">get</label><div class="keybtns" id="lsm-gets"></div></div>
+          <div class="verdict" id="lsm-verdict"><span class="dot"></span><span id="lsm-vtext">Put keys until a flush, delete one, then compact.</span></div>
+        </div>
+        <div class="stage">
+          <div class="layer"><h4>memtable (RAM · newest)</h4><div class="cells" id="lsm-mem"></div></div>
+          <div id="lsm-ssts"></div>
+          <p class="proof"><b>The proof:</b> every write was an in-memory insert (O(log n), no random disk I/O); a flush is
+            one sequential pass. Reads walk layers newest→oldest — a tombstone shadows the old value. Compaction is the
+            housekeeping tax that keeps reads and space in check. Great for write-heavy workloads.</p>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- 2 · WAL -->
+    <section class="phase" data-tab="2 · WAL">
+      <h2>Write-ahead log — surviving a crash</h2>
+      <p class="lede">The memtable is in RAM — a crash loses it. Before acking a write, append it to a durable
+        <strong>log</strong> (and fsync). After a crash you <strong>replay</strong> the log to rebuild the exact state.
+        The WAL is the source of truth; the in-memory table is just a fast materialization.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <button class="act" id="wal-w1">✎ put alice = 150</button>
+          <button class="act" id="wal-w2">✎ put bob = 50</button>
+          <button class="act" id="wal-w3">✎ delete bob</button>
+          <button class="ghost" id="wal-crash">💥 Crash (lose the memtable)</button>
+          <button class="ghost" id="wal-recover">⟳ Restart &amp; recover from WAL</button>
+          <button class="ghost" id="wal-reset">↺ Reset</button>
+          <div class="verdict" id="wal-verdict"><span class="dot"></span><span id="wal-vtext">Write a few records, crash, then recover.</span></div>
+        </div>
+        <div class="stage">
+          <div class="layer"><h4>WAL · append-only, fsync'd (on disk)</h4><div class="log-list" id="wal-log">(empty)</div></div>
+          <div class="layer"><h4>memtable (RAM)</h4><div class="cells" id="wal-mem"></div></div>
+          <p class="proof"><b>The proof:</b> the write is durable the moment it's fsync'd to the WAL — the crash throws
+            away RAM, and recovery replays the log to reconstruct the exact memtable. fsync is the durability point (and
+            the throughput bottleneck every engine fights with group commit). Postgres WAL, MySQL redo log, Cassandra
+            commitlog — same idea.</p>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- 3 · B-TREE vs LSM -->
+    <section class="phase" data-tab="3 · B-tree vs LSM">
+      <h2>B-tree vs LSM — the three amplifications</h2>
+      <p class="lede">Two opposite bets. A <strong>B-tree</strong> updates pages in place: reads are one tight path, but
+        every write rewrites a page. An <strong>LSM</strong> appends: writes are cheap, but a read may probe many
+        SSTables. Compaction is the knob that trades <strong>write-amp</strong> for <strong>read-amp</strong>.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <div><div class="slabel"><span>LSM: compact every N SSTables</span><b id="ba-cval">2</b></div><input type="range" id="ba-compact" min="1" max="9" value="2" /><div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px">9 = never compact</div></div>
+          <div class="verdict" id="ba-verdict"><span class="dot"></span><span id="ba-vtext">Drag the knob — watch write-amp and read-amp trade off.</span></div>
+        </div>
+        <div class="stage">
+          <div><label class="fld">disk writes (write amplification) · 500 inserts + 500 updates</label><div id="ba-writes"></div></div>
+          <div><label class="fld">read probes per lookup (read amplification) · 500 reads</label><div id="ba-reads"></div></div>
+          <p class="proof"><b>The proof:</b> the un-compacted LSM writes the fewest bytes (pure appends) but probes the
+            most SSTables per read; compacting hard slashes the probes but rewrites live keys over and over
+            (write-amp). The B-tree sits at a steady one-path read and a page-rewrite per write. Real LSMs add Bloom
+            filters so most SSTable probes are skipped — pushing read-amp back toward 1.</p>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- 4 · QUORUMS -->
+    <section class="phase" data-tab="4 · Quorums">
+      <h2>Replication &amp; quorums — R + W &gt; N</h2>
+      <p class="lede">Every write copies to N replicas, but you needn't wait for all N. Require W acks per write and read
+        from R; if <strong>R + W &gt; N</strong> the read set and write set must overlap, so a read always sees the
+        newest write. Below the line, reads can go stale.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <div><div class="slabel"><span>W · write replicas</span><b id="qr-wv">2</b></div><input type="range" id="qr-w" min="1" max="3" value="2" /></div>
+          <div><div class="slabel"><span>R · read replicas</span><b id="qr-rv">2</b></div><input type="range" id="qr-r" min="1" max="3" value="2" /></div>
+          <div class="chip good" id="qr-badge">R+W = 4 &gt; N=3 ✓ overlap</div>
+          <button class="act" id="qr-write">✎ Write "new" (v2) to W replicas</button>
+          <button class="act" id="qr-read">👁 Read from R replicas</button>
+          <button class="ghost" id="qr-reset">↺ Reset (all "old" v1)</button>
+          <div class="verdict" id="qr-verdict"><span class="dot"></span><span id="qr-vtext">Write, then read — try R+W&gt;N vs R+W≤N.</span></div>
+        </div>
+        <div class="stage">
+          <div class="nodes" id="qr-nodes"></div>
+          <p class="proof"><b>The proof:</b> writes hit the first W replicas, reads the last R; those subsets overlap
+            exactly when <code>W + R &gt; N</code> (pigeonhole), so a read always includes a replica with the newest
+            version. Below the line, the read can miss the write entirely — fast, but stale. That one inequality is the
+            dial from "eventually consistent &amp; fast" to "strongly consistent &amp; slower".</p>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- 5 · DYNAMO -->
+    <section class="phase" data-tab="5 · Dynamo Ring">
+      <h2>Dynamo-style replication — leaderless &amp; self-healing</h2>
+      <p class="lede">No primary: a key hashes to a <strong>preference list</strong> of N nodes. If one is down,
+        <strong>hinted handoff</strong> keeps the write; when it returns, the hint is delivered. A read compares replicas
+        and <strong>read-repair</strong> heals stale ones. Concurrent writes resolve by last-write-wins.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <button class="act" id="dy-put">✎ PUT user:1 = "Alice v{n}"</button>
+          <button class="ghost" id="dy-down">✕ Take a preference node down</button>
+          <button class="ghost" id="dy-recover">⟳ Recover it (deliver hint)</button>
+          <button class="act" id="dy-read">👁 GET (with read-repair)</button>
+          <button class="ghost" id="dy-reset">↺ Reset</button>
+          <div class="verdict" id="dy-verdict"><span class="dot"></span><span id="dy-vtext">Put, take a node down and put again, recover, then read.</span></div>
+        </div>
+        <div class="stage">
+          <div class="nodes" id="dy-nodes"></div>
+          <p class="proof"><b>The proof:</b> the accented nodes are <code>user:1</code>'s preference list. With a replica
+            down, a healthy node holds a <span style="color:var(--amber)">hint</span> so the write never fails; recovery
+            delivers it. A read takes the newest timestamp and writes it back to any stale replica — the ring heals as a
+            side effect of traffic. LWW keeps the latest write and silently drops a concurrent one (vector clocks would
+            detect and merge).</p>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- 6 · TRANSACTIONS -->
+    <section class="phase" data-tab="6 · Transactions">
+      <h2>Transactions — MVCC, snapshots &amp; the lost update</h2>
+      <p class="lede">MVCC keeps multiple <strong>versions</strong> per row so a transaction reads a stable
+        <strong>snapshot</strong> — readers never block writers. But two transactions that read-then-write the same row
+        can <strong>lose an update</strong>; a conditional write (CAS/OCC) makes the conflict surface.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <button class="act" id="tx-mvcc">▶ MVCC snapshot: T1 reads while T2 commits</button>
+          <button class="act" id="tx-lost">▶ Two deposits: naive vs CAS/OCC</button>
+          <div class="verdict" id="tx-verdict"><span class="dot"></span><span id="tx-vtext">Run the snapshot demo, then the lost-update demo.</span></div>
+        </div>
+        <div class="stage">
+          <div id="tx-out"></div>
+          <p class="proof"><b>The proof:</b> under MVCC, T1's repeated reads return its snapshot even after T2 commits a
+            new version (repeatable read). The lost update: two deposits both read 100 and write back, so one is
+            clobbered → 130 or 150, not 180. A conditional commit (reject if the row changed since you read it) makes T2
+            abort and retry on the fresh value → 180. Climb the contention ladder only as high as the conflict demands.</p>
+        </div>
+      </div></div>
+    </section>
+
+    <div class="side-foot" style="margin-top:24px; padding-top:22px; border-top:1px solid var(--line); text-align:center">Browser port of the <code style="font-size:10px">src/phase*</code> scripts · same engines · MIT</div>
+    </div><!-- /main-inner -->
+  </main>
+</div>
+
+<script>
+const sections = [...document.querySelectorAll('section.phase')];
+const navEl = document.getElementById('nav'), appEl = document.getElementById('app');
+const tabButtons = [];
+const slug = s => s.dataset.tab.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const closeNav = () => appEl.classList.remove('nav-open');
+const TIER_OF = {
+  'overview':'Overview',
+  '1-lsm-tree':'Storage engines', '2-wal':'Storage engines', '3-b-tree-vs-lsm':'Storage engines',
+  '4-quorums':'Replication', '5-dynamo-ring':'Replication',
+  '6-transactions':'Transactions',
+};
+navEl.setAttribute('role','tablist'); navEl.setAttribute('aria-orientation','vertical');
+let curTier=null, groupEl=null;
+sections.forEach((sec,i)=>{ const id=slug(sec), tier=TIER_OF[id]||'More';
+  if(tier!==curTier){ groupEl=document.createElement('div'); groupEl.className='nav-group';
+    const h=document.createElement('div'); h.className='nav-group-label'; h.textContent=tier; groupEl.appendChild(h); navEl.appendChild(groupEl); curTier=tier; }
+  sec.id='panel-'+id; sec.setAttribute('role','tabpanel');
+  const parts=sec.dataset.tab.split('·').map(s=>s.trim());
+  const b=document.createElement('button'); b.className='nav-item'; b.setAttribute('role','tab');
+  b.innerHTML=`<span class="n">${parts.length>1?parts[0]:''}</span><span class="t">${parts.length>1?parts[1]:parts[0]}</span>`;
+  b.onclick=()=>{ activate(i,true); closeNav(); };
+  b.onkeydown=(e)=>{ const d=e.key==='ArrowDown'?1:e.key==='ArrowUp'?-1:e.key==='Home'?'first':e.key==='End'?'last':0; if(!d)return; e.preventDefault();
+    const n=d==='first'?0:d==='last'?sections.length-1:(i+d+sections.length)%sections.length; activate(n,true); tabButtons[n].focus(); };
+  tabButtons.push(b); groupEl.appendChild(b); });
+function activate(i,push){ sections.forEach((s,j)=>s.classList.toggle('active',i===j));
+  tabButtons.forEach((b,j)=>{ const on=i===j; b.classList.toggle('active',on); b.setAttribute('aria-selected',String(on)); b.tabIndex=on?0:-1; });
+  if(push && location.hash.slice(1)!==slug(sections[i])) history.replaceState(null,'','#'+slug(sections[i]));
+  window.scrollTo({ top:0, behavior: reduceMotion?'auto':'smooth' }); }
+function fromHash(){ const i=sections.findIndex(s=>slug(s)===location.hash.slice(1)); activate(i>=0?i:0,false); }
+addEventListener('hashchange',fromHash); fromHash();
+document.getElementById('hamburger')?.addEventListener('click',()=>appEl.classList.toggle('nav-open'));
+document.getElementById('backdrop')?.addEventListener('click',closeNav);
+addEventListener('keydown',e=>{ if(e.key==='Escape') closeNav(); });
+
+const $=(s,r=document)=>r.querySelector(s), el=(t,c)=>{ const n=document.createElement(t); if(c)n.className=c; return n; };
+function verdict(sel,tsel,kind,text){ const v=$(sel); v.className='verdict '+kind; $(tsel).innerHTML=text; }
+
+/* ══ 1 · LSM ══ */
+(function(){
+  const TOMB='␀'; const KEYS=['a','b','c','d']; let mem, ssts, ver;
+  function reset(){ mem=new Map(); ssts=[]; ver={a:0,b:0,c:0,d:0}; paint('Put keys until a flush, delete one, then compact.','warn'); }
+  function flush(){ ssts.unshift([...mem.entries()].sort((x,y)=>x[0].localeCompare(y[0]))); mem.clear(); }
+  function put(k){ ver[k]++; mem.set(k,k+ver[k]); if(mem.size>=3) flush(); paint(`put ${k}=${k}${ver[k]} → memtable${mem.size===0?' flushed to a new SSTable':''}.`,'ok'); }
+  function del(k){ mem.set(k,TOMB); if(mem.size>=3) flush(); paint(`delete ${k} → wrote a tombstone (a delete is just a write).`,'warn'); }
+  function get(k){ let val, layer;
+    if(mem.has(k)){ val=mem.get(k); layer='memtable'; }
+    else for(let i=0;i<ssts.length;i++){ const f=ssts[i].find(([kk])=>kk===k); if(f){ val=f[1]; layer='SSTable #'+(ssts.length-i); break; } }
+    const found = val!==undefined && val!==TOMB;
+    let msg;
+    if (found) msg = `get ${k} → <b>${val}</b> from ${layer}`;
+    else if (val===TOMB) msg = `get ${k} → <b>not found</b> (tombstone in ${layer} shadows any older value)`;
+    else msg = `get ${k} → <b>not found</b> (never written)`;
+    paint(msg, found?'ok':'bad'); }
+  function paint(msg,kind){ $('#lsm-mem').innerHTML = mem.size? [...mem.entries()].map(([k,v])=>`<span class="cell${v===TOMB?' tomb':''}">${k}${v===TOMB?' ⌫':'='+v}</span>`).join('') : '<span class="cell" style="opacity:.5">(empty)</span>';
+    $('#lsm-ssts').innerHTML = ssts.length? ssts.map((t,i)=>`<div class="layer"><h4>SSTable #${ssts.length-i} · immutable, sorted</h4><div class="cells">${t.map(([k,v])=>`<span class="cell${v===TOMB?' tomb':''}">${k}${v===TOMB?' ⌫':'='+v}</span>`).join('')}</div></div>`).join('') : '<div class="layer"><h4>SSTables</h4><span style="font-family:var(--mono);font-size:12px;color:var(--muted)">none yet — flush at 3 writes</span></div>';
+    verdict('#lsm-verdict','#lsm-vtext',kind,msg); }
+  const mk=(box,fn,label)=>{ const c=$(box); KEYS.forEach(k=>{ const b=el('button','ghost'); b.textContent=label(k); b.onclick=()=>fn(k); c.appendChild(b); }); };
+  mk('#lsm-puts',put,k=>'put '+k); mk('#lsm-dels',del,k=>'del '+k); mk('#lsm-gets',get,k=>'get '+k);
+  $('#lsm-compact').onclick=()=>{ const merged=new Map(); for(const t of [...ssts].reverse()) for(const [k,v] of t) merged.set(k,v);
+    const live=[...merged.entries()].filter(([,v])=>v!==TOMB).sort((a,b)=>a[0].localeCompare(b[0])); ssts=live.length?[live]:[]; paint(`compacted ${'▮'} → 1 SSTable with ${live.length} live key(s); tombstones purged.`,'ok'); };
+  $('#lsm-reset').onclick=reset; reset();
+})();
+
+/* ══ 2 · WAL ══ */
+(function(){
+  let wal, mem, crashed;
+  function reset(){ wal=[]; mem=new Map(); crashed=false; paint('Write a few records, crash, then recover.','warn'); }
+  function paint(msg,kind){ $('#wal-log').innerHTML = wal.length? wal.map(r=>`<div>${r.op==='put'?`put ${r.k} = ${r.v}`:`del ${r.k}`}</div>`).join('') : '(empty)';
+    $('#wal-mem').innerHTML = crashed? '<span class="cell tomb" style="text-decoration:none">💥 lost (RAM cleared)</span>' : (mem.size? [...mem.entries()].map(([k,v])=>`<span class="cell">${k}=${v}</span>`).join('') : '<span class="cell" style="opacity:.5">(empty)</span>');
+    verdict('#wal-verdict','#wal-vtext',kind,msg); }
+  function write(rec){ if(crashed) return; wal.push(rec); if(rec.op==='put') mem.set(rec.k,rec.v); else mem.delete(rec.k); paint(`Appended to the WAL and fsync'd, then updated memory: ${rec.op==='put'?`${rec.k}=${rec.v}`:`del ${rec.k}`}. Durable now.`,'ok'); }
+  $('#wal-w1').onclick=()=>write({op:'put',k:'alice',v:'150'}); $('#wal-w2').onclick=()=>write({op:'put',k:'bob',v:'50'}); $('#wal-w3').onclick=()=>write({op:'del',k:'bob'});
+  $('#wal-crash').onclick=()=>{ mem=new Map(); crashed=true; paint('💥 Crash — the process died and the memtable (RAM) is gone. Only the fsync\'d WAL survives on disk.','bad'); };
+  $('#wal-recover').onclick=()=>{ mem=new Map(); crashed=false; let n=0; for(const r of wal){ if(r.op==='put') mem.set(r.k,r.v); else mem.delete(r.k); n++; } paint(`Recovered by replaying <b>${n}</b> WAL records → the exact pre-crash state is back. Durability came from the log.`,'ok'); };
+  $('#wal-reset').onclick=reset; reset();
+})();
+
+/* ══ 3 · B-TREE vs LSM ══ */
+(function(){
+  const N=500, U=500, READS=500;
+  function simLSM(compactEvery){ const mem=new Map(); let ssts=[]; let writes=0, layers=0; const T=32;
+    const put=(k,v)=>{ mem.set(k,v); writes++; if(mem.size>=T){ ssts.unshift(new Map(mem)); mem.clear(); if(ssts.length>=compactEvery){ const m=new Map(); for(const t of [...ssts].reverse()) for(const [kk,vv] of t) m.set(kk,vv); writes+=m.size; ssts=[m]; } } };
+    const keys=Array.from({length:N},(_,i)=>'k'+i); for(const k of keys) put(k,'v0'); for(let i=0;i<U;i++) put(keys[(i*37)%N],'v'+i);
+    for(let i=0;i<READS;i++){ layers++; const k=keys[(i*53)%N]; if(!mem.has(k)) for(const t of ssts){ layers++; if(t.has(k)) break; } }
+    return { writes, probes:layers/READS, ssts:ssts.length }; }
+  const BTREE={ writes:N+U, probes:3 }; // in-place page rewrite per op; one ~3-node path per read
+  function bar(box,rows){ const max=Math.max(...rows.map(r=>r.v)); $(box).innerHTML=rows.map(r=>`<div class="barrow${r.bad?' bad':''}"><span>${r.label}</span><div class="bar"><span style="width:${Math.max(2,r.v/max*100)}%"></span></div><span>${r.t}</span></div>`).join(''); }
+  function render(){ const ce=+$('#ba-compact').value; const compactEvery = ce>=9?Infinity:ce; $('#ba-cval').textContent = ce>=9?'∞':ce;
+    const lsm=simLSM(compactEvery);
+    bar('#ba-writes',[ {label:'B-tree',v:BTREE.writes,t:BTREE.writes+''}, {label:'LSM',v:lsm.writes,t:lsm.writes+'',bad:lsm.writes>BTREE.writes} ]);
+    bar('#ba-reads',[ {label:'B-tree',v:BTREE.probes,t:BTREE.probes.toFixed(1)}, {label:'LSM',v:lsm.probes,t:lsm.probes.toFixed(1),bad:lsm.probes>3} ]);
+    if(compactEvery===Infinity) verdict('#ba-verdict','#ba-vtext','warn',`Never compacting: <b>${lsm.writes}</b> disk writes (cheapest — pure appends) but <b>${lsm.probes.toFixed(1)}</b> SSTable probes/read (${lsm.ssts} SSTables). Writes love LSM; reads suffer.`);
+    else verdict('#ba-verdict','#ba-vtext','ok',`Compact every ${compactEvery}: probes drop to <b>${lsm.probes.toFixed(1)}</b>/read, but disk writes rise to <b>${lsm.writes}</b> (write amplification). You’re tuning where to sit on the curve.`); }
+  $('#ba-compact').oninput=render; render();
+})();
+
+/* ══ 4 · QUORUMS ══ */
+(function(){
+  const N=3; let reps, W, R; const box=$('#qr-nodes');
+  function badge(){ const s=W+R; $('#qr-badge').innerHTML=`R+W = ${s} ${s>N?'&gt;':'≤'} N=3 ${s>N?'✓ overlap':'✗ may miss'}`; $('#qr-badge').className='chip '+(s>N?'good':'bad'); }
+  function draw(hl){ box.innerHTML=''; reps.forEach((r,i)=>{ const n=el('div','dnode'+(hl&&hl.includes(i)?' pref':'')); n.innerHTML=`<div class="did">replica ${i}</div><div class="dv">${r.v} <span style="color:var(--muted)">v${r.ver}</span></div>`; box.appendChild(n); }); }
+  function reset(){ reps=[{v:'old',ver:1},{v:'old',ver:1},{v:'old',ver:1}]; W=+$('#qr-w').value; R=+$('#qr-r').value; badge(); draw(); verdict('#qr-verdict','#qr-vtext','warn','Write, then read — try R+W&gt;N vs R+W≤N.'); }
+  $('#qr-w').oninput=e=>{ W=+e.target.value; $('#qr-wv').textContent=W; badge(); };
+  $('#qr-r').oninput=e=>{ R=+e.target.value; $('#qr-rv').textContent=R; badge(); };
+  $('#qr-write').onclick=()=>{ const set=[...Array(W).keys()]; set.forEach(i=>{reps[i].v='new'; reps[i].ver=2;}); draw(set); verdict('#qr-verdict','#qr-vtext','warn',`Wrote "new" (v2) to the first ${W} replica(s): {${set.join(',')}}. The other ${N-W} still hold "old".`); };
+  $('#qr-read').onclick=()=>{ const readSet=[]; for(let i=N-1;i>=N-R;i--) readSet.push(i); let newest={v:null,ver:0}; readSet.forEach(i=>{ if(reps[i].ver>newest.ver) newest=reps[i]; }); draw(readSet);
+    if(newest.v==='new') verdict('#qr-verdict','#qr-vtext','ok',`Read replicas {${readSet.join(',')}} → newest = <b>"new"</b> (v2)${(W+R)>N?' — R+W&gt;N guarantees the write set {0…} and read set {…N} overlap':''}.`);
+    else verdict('#qr-verdict','#qr-vtext','bad',`Read replicas {${readSet.join(',')}} → <b>"old"</b> (v1, STALE). R+W=${W+R} ≤ 3 — the read subset missed the write subset entirely.`); };
+  $('#qr-reset').onclick=reset; reset();
+})();
+
+/* ══ 5 · DYNAMO ══ */
+(function(){
+  const IDS=['A','B','C','D','E'], N=3, KEY='user:1'; let nodes, ver;
+  function hash(s){ let h=2166136261>>>0; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619)>>>0; } return h>>>0; }
+  const prefIdx = ()=>{ const start=hash(KEY)%IDS.length; return Array.from({length:N},(_,i)=>(start+i)%IDS.length); };
+  function reset(){ nodes=IDS.map(id=>({id,up:true,val:null,ts:0,hints:[]})); ver=0; draw(); verdict('#dy-verdict','#dy-vtext','warn','Put, take a node down and put again, recover, then read.'); }
+  function draw(msg,kind){ const pref=prefIdx(); const box=$('#dy-nodes'); box.innerHTML='';
+    nodes.forEach((n,i)=>{ const d=el('div','dnode'+(pref.includes(i)?' pref':'')+(n.up?'':' down')); const hint=n.hints.length?`<div class="hint">hint→${n.hints.map(h=>h.forId).join(',')}</div>`:'';
+      d.innerHTML=`<div class="did">${n.id} ${n.up?'':'· down'}</div><div class="dv">${n.val?`"${n.val}" <span style="color:var(--muted)">ts${n.ts}</span>`:'—'}</div>${hint}`; box.appendChild(d); });
+    if(msg) verdict('#dy-verdict','#dy-vtext',kind||'warn',msg); }
+  $('#dy-put').onclick=()=>{ ver++; const val='Alice v'+ver; const pref=prefIdx(); const acked=[];
+    pref.forEach(i=>{ const n=nodes[i]; if(n.up){ n.val=val; n.ts=ver; acked.push(n.id); } else { const fb=nodes.find(x=>x.up && !pref.includes(nodes.indexOf(x))); if(fb){ fb.hints.push({forId:n.id,val,ts:ver}); acked.push(`${fb.id}(hint→${n.id})`); } } });
+    draw(`PUT ${KEY}="${val}" → ${acked.join(', ')}.`,'ok'); };
+  $('#dy-down').onclick=()=>{ const pref=prefIdx(); const target=pref.find(i=>nodes[i].up); if(target==null){ draw('All preference nodes are already down.','warn'); return; } nodes[target].up=false; draw(`Node ${nodes[target].id} (in the preference list) is DOWN. The next PUT will use hinted handoff.`,'warn'); };
+  $('#dy-recover').onclick=()=>{ const downNode=nodes.find(n=>!n.up); if(!downNode){ draw('No node is down.','warn'); return; } downNode.up=true; let delivered=0;
+    nodes.forEach(h=>{ const mine=h.hints.filter(x=>x.forId===downNode.id); mine.forEach(x=>{ downNode.val=x.val; downNode.ts=x.ts; delivered++; }); h.hints=h.hints.filter(x=>x.forId!==downNode.id); });
+    draw(`Node ${downNode.id} recovered → ${delivered} hint(s) delivered to it. It’s caught up.`,'ok'); };
+  $('#dy-read').onclick=()=>{ const pref=prefIdx(); const live=pref.filter(i=>nodes[i].up); let newest={val:null,ts:0}; live.forEach(i=>{ if(nodes[i].ts>newest.ts) newest=nodes[i]; });
+    let repaired=[]; if(newest.val) live.forEach(i=>{ if(nodes[i].ts<newest.ts){ nodes[i].val=newest.val; nodes[i].ts=newest.ts; repaired.push(nodes[i].id); } });
+    draw(`GET ${KEY} → ${newest.val?`<b>"${newest.val}"</b> (ts${newest.ts})`:'not found'}.${repaired.length?` Read-repair healed stale replica ${repaired.join(',')}.`:''}`,'ok'); };
+  $('#dy-reset').onclick=reset; reset();
+})();
+
+/* ══ 6 · TRANSACTIONS ══ */
+(function(){
+  function out(html){ $('#tx-out').innerHTML=html; }
+  $('#tx-mvcc').onclick=()=>{
+    out(`<div class="kv"><span>T1 begins · snapshot ts=0 · reads x</span><b>100</b></div>
+      <div class="kv"><span>T2 writes x=200 and commits (new version @ts1)</span><b>—</b></div>
+      <div class="kv"><span>T1 reads x again (same snapshot)</span><b style="color:var(--good)">100 ✓ stable</b></div>
+      <div class="kv"><span>a NEW transaction reads x</span><b>200</b></div>`);
+    verdict('#tx-verdict','#tx-vtext','ok','MVCC kept versions {100@ts0, 200@ts1}; T1 reads as-of its snapshot so its repeated read is stable (repeatable read) — readers never blocked the writer.'); };
+  $('#tx-lost').onclick=()=>{
+    out(`<div class="kv"><span>naive: two deposits (+50, +30) both read 100</span><b style="color:var(--bad)">130 ❌</b></div>
+      <div style="font-family:var(--mono);font-size:11.5px;color:var(--muted);padding:4px 0 10px">each wrote 100+amount, so one clobbered the other — should be 180</div>
+      <div class="kv"><span>CAS/OCC: T1 commits 150; T2's readTs is stale → abort</span><b>retry</b></div>
+      <div class="kv"><span>T2 re-reads 150, commits 150+30</span><b style="color:var(--good)">180 ✓</b></div>`);
+    verdict('#tx-verdict','#tx-vtext','ok','The lost update: both read 100, so a blind write clobbers the other → 130. A conditional commit (reject if the row changed since you read it) makes T2 abort and retry on the fresh value → 180.'); };
+  $('#tx-mvcc').click();
+})();
+</script>
+</body>
+</html>

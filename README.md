@@ -38,6 +38,21 @@ Each prints a timestamped log so you can watch the engine work.
 Start by reading `src/phase1/lsm.ts` — the whole storage engine in ~100
 commented lines.
 
+## Interactive Storage Lab
+
+Every phase is also a live instrument in the browser — flush an LSM and watch a
+tombstone shadow the old value, crash and recover through a WAL, drag the
+compaction knob to trade write-amp for read-amp, tune a quorum, heal a Dynamo
+ring, and race two transactions.
+
+```bash
+npm run web        # serves web/index.html at http://localhost:8080 (no deps)
+```
+
+One self-contained static page (self-hosted fonts). To host it on **Cloudflare
+Pages**: connect this repo in the dashboard with build output `web` (auto-deploys
+on push), or run `npx wrangler login` then `npm run deploy`.
+
 ## What each phase proves (the money quotes)
 
 - **Phase 2** — writes survive a simulated crash because they were `fsync`'d to
