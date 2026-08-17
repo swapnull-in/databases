@@ -153,7 +153,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="brand"><span class="glyph">▤</span><span class="wm"><b>Storage Lab</b><span>Databases</span></span></div>
     <nav class="nav" id="nav" aria-label="Lessons"></nav>
-    <div class="side-foot">Every panel is also a runnable <code style="font-size:10px">npm run phaseN</code>.<br /><a href="https://github.com/swapnull-in/databases" target="_blank" rel="noopener">View source ↗</a></div>
+    <div class="side-foot">Every panel is also a runnable <code style="font-size:10px">npm run phaseN</code>.<br /><a href="https://github.com/swapnull-in/databases" target="_blank" rel="noopener">View source ↗</a> · <a href="https://system-design-labs.pages.dev" target="_blank" rel="noopener">all 10 labs ↗</a></div>
   </aside>
   <div class="backdrop" id="backdrop"></div>
   <main class="main">
@@ -431,11 +431,41 @@
       </div></div>
     </section>
 
+    <!-- 11 · BANKING LEDGER -->
+    <section class="phase" data-tab="11 · Banking ledger">
+      <h2>Banking ledger — double-entry, derived balances</h2>
+      <p class="lede">Money is an append-only <strong>double-entry</strong> log: every transfer writes a debit and a
+        credit atomically, summing to zero. Balances are <strong>derived</strong> by folding entries — never stored as
+        mutable truth. <em>(Deep Dive 24 · <code>npm run phase11</code>)</em></p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <button class="act" id="bl-transfer">＄ Transfer $50 A→B</button>
+          <button class="ghost" id="bl-retry">↻ Retry same transfer (same key)</button>
+          <button class="ghost" id="bl-overdraft">⚠ Attempt $10,000 overdraft</button>
+          <button class="ghost" id="bl-audit">🔍 Audit (conservation)</button>
+          <button class="ghost" id="bl-reset">↺ Reset</button>
+          <div class="verdict" id="bl-verdict"><span class="dot"></span><span id="bl-vtext">A starts with $100, B with $20. Every action appends entries; balances fold.</span></div>
+        </div>
+        <div class="stage">
+          <div style="display:flex;gap:18px;font-family:var(--mono)">
+            <div><div style="font-size:24px" id="bl-a">$100</div><div style="font-size:10px;color:var(--muted)">ACCOUNT A</div></div>
+            <div><div style="font-size:24px" id="bl-b">$20</div><div style="font-size:10px;color:var(--muted)">ACCOUNT B</div></div>
+            <div><div style="font-size:24px" id="bl-sum">0</div><div style="font-size:10px;color:var(--muted)">Σ ALL ENTRIES</div></div>
+          </div>
+          <div class="log-list" id="bl-log" style="font-family:var(--mono);font-size:12px;line-height:1.7">—</div>
+          <p class="proof"><b>The proof:</b> a retried transfer with the same idempotency key appends <b>nothing</b>; the
+            overdraft is rejected by the invariant guard before any entry lands; and the audit recomputes every balance
+            from history and checks the global sum of entries is <b>zero</b> — money is conserved, never minted.</p>
+        </div>
+      </div></div>
+    </section>
     <div class="side-foot" style="margin-top:24px; padding-top:22px; border-top:1px solid var(--line); text-align:center">Browser port of the <code style="font-size:10px">src/phase*</code> scripts · same engines · MIT</div>
     </div><!-- /main-inner -->
   </main>
 </div>
 
+<script src="drill-data.js"></script>
+<script src="drill.js"></script>
 <script>
 const sections = [...document.querySelectorAll('section.phase')];
 const navEl = document.getElementById('nav'), appEl = document.getElementById('app');
@@ -444,6 +474,8 @@ const slug = s => s.dataset.tab.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const closeNav = () => appEl.classList.remove('nav-open');
 const TIER_OF = {
+  'drill':'Practice',
+  '11-banking-ledger':'Deep dives',
   'overview':'Overview',
   '1-lsm-tree':'Storage engines', '2-wal':'Storage engines', '3-b-tree-vs-lsm':'Storage engines', '10-buffer-pool':'Storage engines',
   '7-indexes':'Indexes & queries',
@@ -671,6 +703,35 @@ function fnv(s){ let h=2166136261>>>0; for(let i=0;i<s.length;i++){ h^=s.charCod
   const levels=[['READ UNCOMMITTED',['✗','✗','✗','✗']],['READ COMMITTED',['✓','✗','✗','✗']],['REPEATABLE READ / SNAPSHOT',['✓','✓','✗','✗']],['SERIALIZABLE',['✓','✓','✓','✓']]];
   $('#an-ladder').innerHTML=levels.map(([l,c])=>`<tr><td>${l}</td>${c.map(x=>`<td style="color:${x==='✓'?'var(--good)':'var(--bad)'}">${x}</td>`).join('')}</tr>`).join('');
   show('dirty');
+})();
+/* ══ 11 · BANKING LEDGER ══ */
+(function(){
+  var entries=[], keys={}, logs=[];
+  function bal(acct){ return entries.reduce(function(s,e){ return s+(e.acct===acct?e.amt:0); }, acct==='A'?100:20); }
+  function paint(msg,kind){
+    document.getElementById('bl-a').textContent='$'+bal('A');
+    document.getElementById('bl-b').textContent='$'+bal('B');
+    var sum=entries.reduce(function(s,e){return s+e.amt;},0);
+    document.getElementById('bl-sum').textContent=sum;
+    document.getElementById('bl-sum').style.color=sum===0?'var(--good)':'var(--bad)';
+    document.getElementById('bl-log').innerHTML=logs.length?logs.join('<br>'):'—';
+    var v=document.getElementById('bl-verdict'); v.className='verdict '+(kind||'warn');
+    document.getElementById('bl-vtext').innerHTML=msg;
+  }
+  function transfer(key,amt){
+    if(keys[key]){ logs.unshift('transfer '+key+' replayed → no new entries (idempotent)'); paint('Same key → <b>no double-move</b>; the original result is returned.','ok'); return; }
+    if(bal('A')<amt){ logs.unshift('transfer REJECTED: A has $'+bal('A')+' < $'+amt+' (invariant guard)'); paint('Overdraft <b>rejected before any entry</b> — fail toward holding money.','bad'); return; }
+    keys[key]=true; entries.push({acct:'A',amt:-amt},{acct:'B',amt:amt});
+    logs.unshift('tx '+key+': debit A −$'+amt+' · credit B +$'+amt+' (atomic pair, sums to 0)');
+    paint('Appended a <b>debit+credit pair</b> atomically. Balances are folds of the log.','ok');
+  }
+  document.getElementById('bl-transfer').onclick=function(){ transfer('tx_'+(Object.keys(keys).length+1)+'_50',50); };
+  document.getElementById('bl-retry').onclick=function(){ var k=Object.keys(keys); if(!k.length){ paint('Do a transfer first.','warn'); return; } transfer(k[k.length-1],50); };
+  document.getElementById('bl-overdraft').onclick=function(){ transfer('tx_over',10000); };
+  document.getElementById('bl-audit').onclick=function(){ var sum=entries.reduce(function(s,e){return s+e.amt;},0);
+    logs.unshift('audit: Σ entries = '+sum+' · rebuilt A=$'+bal('A')+' B=$'+bal('B')+' from '+entries.length+' entries');
+    paint(sum===0?'Audit passed: <b>Σ = 0</b> (money conserved) and every balance rebuilds from history.':'AUDIT FAILED', sum===0?'ok':'bad'); };
+  document.getElementById('bl-reset').onclick=function(){ entries=[]; keys={}; logs=[]; paint('Reset. A=$100, B=$20.','warn'); };
 })();
 </script>
 </body>

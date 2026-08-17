@@ -38,6 +38,7 @@ Each prints a timestamped log so you can watch the engine work.
 | `npm run phase8`  | **Sharding** — hash/range/consistent/virtual-shards remap; hot-partition write-sharding | scale |
 | `npm run phase9`  | **Isolation levels** — dirty/non-repeatable/phantom/write-skew and the ladder | transactions |
 | `npm run phase10` | **Buffer pool** — pages, LRU, hit ratio vs pool size, the scan cliff | storage engine |
+| `npm run phase11` | **Banking ledger** — double-entry entries, derived balances, idempotent transfers, conservation audit *(Deep Dive 24)* | worked problem |
 
 Start by reading `src/phase1/lsm.ts` — the whole storage engine in ~100
 commented lines.
@@ -92,6 +93,14 @@ src/
   phase5/  Dynamo-style replication
   phase6/  MVCC transactions + contention
 ```
+
+## Drill & study guide
+
+The web lab has a **Drill** tab — the matching study module's interview questions
+and cheat-sheet one-liners as click-to-reveal cards (active recall: answer out
+loud before revealing). [`STUDY-GUIDE.md`](STUDY-GUIDE.md) maps every phase to
+the exact module section it implements, with the staff-level insight quoted, and
+points to the deep dives to read next.
 
 ## License
 
