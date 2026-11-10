@@ -16,6 +16,7 @@ This repo is the runnable half of **[Core Course/06-databases.md](https://github
 | 8 | Hash/range/consistent/virtual-shard remap costs; hot-partition write-sharding | 4.3 Sharding Strategies | "A fixed number of logical/virtual shards from day one so resharding moves whole shards instead of rehashing everything" |
 | 9 | The anomaly ladder — dirty read, non-repeatable, phantom, write skew | 1.3 (isolation pitfalls) | "If you propose `SERIALIZABLE`, you must also propose the retry loop" |
 | 10 | Buffer pool — pages, LRU, hit ratio vs pool size, the scan cliff | 1.4 Pages & Buffer Pool | "'Is the working set in memory?' is the single most predictive question for OLTP database performance" |
+| 12 | Change data capture — dual-write race vs tailing the WAL, lsn-guarded upserts, replay, slot lag | Deep Dive 39 · 1.2 Write-Ahead Log | "Never dual-write a derived store. The database already has one ordered log of every commit; CDC just reads it." |
 
 ## Go deeper
 
@@ -24,4 +25,5 @@ This repo is the runnable half of **[Core Course/06-databases.md](https://github
 - **[Deep Dives/05-dynamodb.md](https://github.com/swapnull-in/system-design/blob/main/Deep%20Dives/05-dynamodb.md)** — partition physics, GSI vs LSI, single-table design, and write-sharding the hot key (phases 5, 8).
 - **[Deep Dives/34-newsql-distributed-sql.md](https://github.com/swapnull-in/system-design/blob/main/Deep%20Dives/34-newsql-distributed-sql.md)** — Spanner TrueTime vs HLC, and when distributed SQL beats sharded Postgres (after phase 8).
 - **[Deep Dives/24-banking-ledger.md](https://github.com/swapnull-in/system-design/blob/main/Deep%20Dives/24-banking-ledger.md)** — transactions and isolation with real money on the line; the payoff of phases 6 and 9.
+- **[Deep Dives/39-change-data-capture.md](https://github.com/swapnull-in/system-design/blob/main/Deep%20Dives/39-change-data-capture.md)** — Debezium and Kafka, snapshots, ordering and delivery guarantees, the replication-slot outage, and CDC vs the outbox (phase 12).
 - **DDIA** — 04-storage-and-retrieval (phases 1–3, 10), 06-replication (phases 4–5), 07-sharding (phase 8), 08-transactions (phases 6, 9).

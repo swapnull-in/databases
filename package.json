@@ -16,6 +16,7 @@
     "phase9": "node src/phase9/isolation-levels.ts",
     "phase10": "node src/phase10/buffer-pool.ts",
     "phase11": "node src/phase11/banking-ledger.ts",
+    "phase12": "node src/phase12/change-data-capture.ts",
     "web": "node web/serve.mjs",
     "deploy": "npx wrangler pages deploy web --project-name databases",
     "typecheck": "tsc --noEmit"

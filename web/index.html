@@ -479,6 +479,33 @@
         </div>
       </div></div>
     </section>
+    <section class="phase" data-tab="12 · Change data capture">
+      <h2>Change data capture — one log, read once</h2>
+      <p class="lede">Writing the database and then the search index is a <strong>dual write</strong>: two writers can
+        commit in one order and reach the index in the other, and the index stays wrong forever. CDC reads the database's
+        own log instead and applies each change <strong>only if its position is newer</strong>.
+        <em>(Deep Dive 39 · <code>npm run phase12</code>)</em></p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <button class="act" id="cdc-race">⚡ Two writers race (79, then 85)</button>
+          <button class="ghost" id="cdc-mode">Mode: dual write</button>
+          <button class="ghost" id="cdc-replay">↻ Connector restarts (replay log)</button>
+          <button class="ghost" id="cdc-reset">↺ Reset</button>
+          <div class="verdict" id="cdc-verdict"><span class="dot"></span><span id="cdc-vtext">product:42 costs 100 in both stores. Race two writers, then switch the mode and race again.</span></div>
+        </div>
+        <div class="stage">
+          <div style="display:flex;gap:18px;font-family:var(--mono)">
+            <div><div style="font-size:24px" id="cdc-db">100</div><div style="font-size:10px;color:var(--muted)">DATABASE</div></div>
+            <div><div style="font-size:24px" id="cdc-ix">100</div><div style="font-size:10px;color:var(--muted)">SEARCH INDEX</div></div>
+            <div><div style="font-size:24px" id="cdc-lsn">1</div><div style="font-size:10px;color:var(--muted)">LOG POSITION</div></div>
+          </div>
+          <div class="log-list" id="cdc-log" style="font-family:var(--mono);font-size:12px;line-height:1.7">—</div>
+          <p class="proof"><b>The proof:</b> in dual-write mode the index ends on <b>79</b> while the database says
+            <b>85</b>, with no error anywhere. In CDC mode the same race converges, and replaying the whole log after a
+            restart changes nothing, because older positions are skipped.</p>
+        </div>
+      </div></div>
+    </section>
     <div class="side-foot" style="margin-top:24px; padding-top:22px; border-top:1px solid var(--line); text-align:center">Browser port of the <code style="font-size:10px">src/phase*</code> scripts · same engines · MIT</div>
     </div><!-- /main-inner -->
   </main>
@@ -496,6 +523,7 @@ const closeNav = () => appEl.classList.remove('nav-open');
 const TIER_OF = {
   'drill':'Practice',
   '11-banking-ledger':'Deep dives',
+  '12-change-data-capture':'Deep dives',
   'overview':'Overview',
   '1-lsm-tree':'Storage engines', '2-wal':'Storage engines', '3-b-tree-vs-lsm':'Storage engines', '10-buffer-pool':'Storage engines',
   '7-indexes':'Indexes & queries',
@@ -752,6 +780,43 @@ function fnv(s){ let h=2166136261>>>0; for(let i=0;i<s.length;i++){ h^=s.charCod
     logs.unshift('audit: Σ entries = '+sum+' · rebuilt A=$'+bal('A')+' B=$'+bal('B')+' from '+entries.length+' entries');
     paint(sum===0?'Audit passed: <b>Σ = 0</b> (money conserved) and every balance rebuilds from history.':'AUDIT FAILED', sum===0?'ok':'bad'); };
   document.getElementById('bl-reset').onclick=function(){ entries=[]; keys={}; logs=[]; paint('Reset. A=$100, B=$20.','warn'); };
+})();
+(function(){
+  var wal, db, ix, ixLsn, cdc=false, logs;
+  function reset(){ wal=[{lsn:1,v:100}]; db=100; ix=100; ixLsn=1; logs=[]; }
+  function paint(msg,kind){
+    document.getElementById('cdc-db').textContent=db;
+    var ixEl=document.getElementById('cdc-ix'); ixEl.textContent=ix; ixEl.style.color=ix===db?'var(--good)':'var(--bad)';
+    document.getElementById('cdc-lsn').textContent=wal.length;
+    document.getElementById('cdc-mode').textContent='Mode: '+(cdc?'CDC (tail the log)':'dual write');
+    document.getElementById('cdc-log').innerHTML=logs.length?logs.join('<br>'):'—';
+    var v=document.getElementById('cdc-verdict'); v.className='verdict '+(kind||'warn');
+    document.getElementById('cdc-vtext').innerHTML=msg;
+  }
+  function commit(v){ db=v; wal.push({lsn:wal.length+1,v:v}); return wal[wal.length-1]; }
+  function apply(c){ if(c.lsn<=ixLsn) return false; ix=c.v; ixLsn=c.lsn; return true; }
+  document.getElementById('cdc-race').onclick=function(){
+    var a=commit(79), b=commit(85);
+    if(cdc){ apply(a); apply(b);
+      logs.unshift('log lsn '+a.lsn+' (79) → lsn '+b.lsn+' (85) applied in commit order');
+      paint('Index fed from the log: it lands on <b>85</b>, same as the database.','ok');
+    } else { ix=85; ix=79; ixLsn=0;
+      logs.unshift('db commits A(79), B(85) · index writes arrive B(85), A(79) → index=79');
+      paint('Both writes succeeded, yet the index says <b>79</b> and the database <b>85</b>. Nothing will repair it.','bad');
+    }
+  };
+  document.getElementById('cdc-mode').onclick=function(){ cdc=!cdc;
+    if(cdc){ ixLsn=0; var n=0; wal.forEach(function(c){ if(apply(c)) n++; }); logs.unshift('switched to CDC: caught up from the log ('+n+' changes applied)'); paint('CDC on. The index was rebuilt from the log and matches the database.','ok'); }
+    else { logs.unshift('switched to dual write'); paint('Dual write on. The app writes the index itself.','warn'); }
+  };
+  document.getElementById('cdc-replay').onclick=function(){
+    if(!cdc){ paint('Switch to CDC mode first: a dual write has no log to replay.','warn'); return; }
+    var applied=0; wal.forEach(function(c){ if(apply(c)) applied++; });
+    logs.unshift('replayed '+wal.length+' events from lsn 1 → '+applied+' applied, '+(wal.length-applied)+' skipped (lsn ≤ stored lsn)');
+    paint('At-least-once delivery is safe: the <b>version guard</b> skipped every event the index already had.','ok');
+  };
+  document.getElementById('cdc-reset').onclick=function(){ reset(); paint('Reset. product:42 costs 100 in both stores.','warn'); };
+  reset(); paint('product:42 costs 100 in both stores. Race two writers, then switch the mode and race again.','warn');
 })();
 </script>
 <script src="lab.js"></script>
