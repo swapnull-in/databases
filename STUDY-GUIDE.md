@@ -1,6 +1,6 @@
 # Study Guide — Database Internals in TypeScript
 
-This repo is the runnable half of **Core Course/06-databases.md**: every claim the module makes about storage engines, replication, sharding, and transactions is a phase you can execute and watch. Study loop: read a module section, run the matching phase (`npm run phaseN`), read its ~100-line source top-to-bottom, then drill yourself with the web Drill panel (`npm run web`). The phase logs are your recall anchors — if you can predict a phase's output before running it, you own that section.
+This repo is the runnable half of **[Core Course/06-databases.md](https://github.com/swapnull-in/system-design/blob/main/Core%20Course/06-databases.md)**: every claim the module makes about storage engines, replication, sharding, and transactions is a phase you can execute and watch. Study loop: read a module section, run the matching phase (`npm run phaseN`), read its ~100-line source top-to-bottom, then drill yourself with the web Drill panel (`npm run web`). The phase logs are your recall anchors — if you can predict a phase's output before running it, you own that section.
 
 ## Phase-to-module mapping
 
@@ -19,9 +19,9 @@ This repo is the runnable half of **Core Course/06-databases.md**: every claim t
 
 ## Go deeper
 
-- **Deep Dives/03-postgresql.md** — heap MVCC, VACUUM/XID wraparound, and the extension ecosystem behind "Postgres until proven otherwise" (phases 6, 9, 10).
-- **Deep Dives/04-cassandra.md** — the ring, query-first tables, bounded partitions, and TTL + TWCS in production (phases 1, 4, 5).
-- **Deep Dives/05-dynamodb.md** — partition physics, GSI vs LSI, single-table design, and write-sharding the hot key (phases 5, 8).
-- **Deep Dives/34-newsql-distributed-sql.md** — Spanner TrueTime vs HLC, and when distributed SQL beats sharded Postgres (after phase 8).
-- **Deep Dives/24-banking-ledger.md** — transactions and isolation with real money on the line; the payoff of phases 6 and 9.
+- **[Deep Dives/03-postgresql.md](https://github.com/swapnull-in/system-design/blob/main/Deep%20Dives/03-postgresql.md)** — heap MVCC, VACUUM/XID wraparound, and the extension ecosystem behind "Postgres until proven otherwise" (phases 6, 9, 10).
+- **[Deep Dives/04-cassandra.md](https://github.com/swapnull-in/system-design/blob/main/Deep%20Dives/04-cassandra.md)** — the ring, query-first tables, bounded partitions, and TTL + TWCS in production (phases 1, 4, 5).
+- **[Deep Dives/05-dynamodb.md](https://github.com/swapnull-in/system-design/blob/main/Deep%20Dives/05-dynamodb.md)** — partition physics, GSI vs LSI, single-table design, and write-sharding the hot key (phases 5, 8).
+- **[Deep Dives/34-newsql-distributed-sql.md](https://github.com/swapnull-in/system-design/blob/main/Deep%20Dives/34-newsql-distributed-sql.md)** — Spanner TrueTime vs HLC, and when distributed SQL beats sharded Postgres (after phase 8).
+- **[Deep Dives/24-banking-ledger.md](https://github.com/swapnull-in/system-design/blob/main/Deep%20Dives/24-banking-ledger.md)** — transactions and isolation with real money on the line; the payoff of phases 6 and 9.
 - **DDIA** — 04-storage-and-retrieval (phases 1–3, 10), 06-replication (phases 4–5), 07-sharding (phase 8), 08-transactions (phases 6, 9).
