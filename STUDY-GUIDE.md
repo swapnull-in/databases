@@ -17,6 +17,7 @@ This repo is the runnable half of **[Core Course/06-databases.md](https://github
 | 9 | The anomaly ladder — dirty read, non-repeatable, phantom, write skew | 1.3 (isolation pitfalls) | "If you propose `SERIALIZABLE`, you must also propose the retry loop" |
 | 10 | Buffer pool — pages, LRU, hit ratio vs pool size, the scan cliff | 1.4 Pages & Buffer Pool | "'Is the working set in memory?' is the single most predictive question for OLTP database performance" |
 | 12 | Change data capture — dual-write race vs tailing the WAL, lsn-guarded upserts, replay, slot lag | Deep Dive 39 · 1.2 Write-Ahead Log | "Never dual-write a derived store. The database already has one ordered log of every commit; CDC just reads it." |
+| 13 | Auction bidding — lost update vs conditional write, proxy bidding, fenced close, hot-auction single writer | Core 48 §4–5 · Pattern 14 | "The bid log is the truth and the price is derived. I start with a conditional write and serialize an auction through one writer only when it gets hot." |
 
 ## Go deeper
 
@@ -26,4 +27,5 @@ This repo is the runnable half of **[Core Course/06-databases.md](https://github
 - **[Deep Dives/34-newsql-distributed-sql.md](https://github.com/swapnull-in/system-design/blob/main/Deep%20Dives/34-newsql-distributed-sql.md)** — Spanner TrueTime vs HLC, and when distributed SQL beats sharded Postgres (after phase 8).
 - **[Deep Dives/24-banking-ledger.md](https://github.com/swapnull-in/system-design/blob/main/Deep%20Dives/24-banking-ledger.md)** — transactions and isolation with real money on the line; the payoff of phases 6 and 9.
 - **[Deep Dives/39-change-data-capture.md](https://github.com/swapnull-in/system-design/blob/main/Deep%20Dives/39-change-data-capture.md)** — Debezium and Kafka, snapshots, ordering and delivery guarantees, the replication-slot outage, and CDC vs the outbox (phase 12).
+- **[Core Course/48-design-online-auction.md](https://github.com/swapnull-in/system-design/blob/main/Core%20Course/48-design-online-auction.md)** — the full design behind phase 13: soft close, watchers over SSE, the payment saga and second-chance offers.
 - **DDIA** — 04-storage-and-retrieval (phases 1–3, 10), 06-replication (phases 4–5), 07-sharding (phase 8), 08-transactions (phases 6, 9).

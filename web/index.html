@@ -506,6 +506,34 @@
         </div>
       </div></div>
     </section>
+    <section class="phase" data-tab="13 · Auction bidding">
+      <h2>Auction bidding — one hot row, one correct leader</h2>
+      <p class="lede">Bidders enter the <strong>maximum</strong> they will pay; the price is the second-highest maximum
+        plus one increment. Two bids that read the row at the same moment must not erase each other, and a bid received
+        after the end must not count, even if the close job runs late.
+        <em>(Core 48 · <code>npm run phase13</code>)</em></p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <button class="act" id="au-race">⚡ Alice ($150) and Bob ($200) bid at once</button>
+          <button class="ghost" id="au-mode">Write: blind</button>
+          <button class="ghost" id="au-rival">＋ Rival bids $180</button>
+          <button class="ghost" id="au-late">⏱ Bid $500 after the end</button>
+          <button class="ghost" id="au-reset">↺ Reset</button>
+          <div class="verdict" id="au-verdict"><span class="dot"></span><span id="au-vtext">Start price $100, increment $5. Race two bidders, then switch the write and race again.</span></div>
+        </div>
+        <div class="stage">
+          <div style="display:flex;gap:18px;font-family:var(--mono)">
+            <div><div style="font-size:24px" id="au-leader">—</div><div style="font-size:10px;color:var(--muted)">LEADER</div></div>
+            <div><div style="font-size:24px" id="au-price">$100</div><div style="font-size:10px;color:var(--muted)">VISIBLE PRICE</div></div>
+            <div><div style="font-size:24px" id="au-max">$0</div><div style="font-size:10px;color:var(--muted)">LEADER'S SECRET MAX</div></div>
+          </div>
+          <div class="log-list" id="au-log" style="font-family:var(--mono);font-size:12px;line-height:1.7">—</div>
+          <p class="proof"><b>The proof:</b> with a blind write Bob's $200 vanishes and Alice leads at $100. With a
+            conditional write Alice's stale write is rejected, she retries, and Bob leads at <b>$155</b>: her $150 plus
+            one increment. The $500 bid stamped after the end is <b>late</b> whatever the row's status says.</p>
+        </div>
+      </div></div>
+    </section>
     <div class="side-foot" style="margin-top:24px; padding-top:22px; border-top:1px solid var(--line); text-align:center">Browser port of the <code style="font-size:10px">src/phase*</code> scripts · same engines · MIT</div>
     </div><!-- /main-inner -->
   </main>
@@ -524,6 +552,7 @@ const TIER_OF = {
   'drill':'Practice',
   '11-banking-ledger':'Deep dives',
   '12-change-data-capture':'Deep dives',
+  '13-auction-bidding':'Deep dives',
   'overview':'Overview',
   '1-lsm-tree':'Storage engines', '2-wal':'Storage engines', '3-b-tree-vs-lsm':'Storage engines', '10-buffer-pool':'Storage engines',
   '7-indexes':'Indexes & queries',
@@ -817,6 +846,44 @@ function fnv(s){ let h=2166136261>>>0; for(let i=0;i<s.length;i++){ h^=s.charCod
   };
   document.getElementById('cdc-reset').onclick=function(){ reset(); paint('Reset. product:42 costs 100 in both stores.','warn'); };
   reset(); paint('product:42 costs 100 in both stores. Race two writers, then switch the mode and race again.','warn');
+})();
+(function(){
+  var INC=5, END=1000, row, conditional=false, logs;
+  function reset(){ row={leader:null,highMax:0,secondMax:95,price:100,version:0}; logs=[]; }
+  function decide(r,who,max,at){
+    if(at>=END) return {next:r,outcome:'late'};
+    if(max<r.price || (max===r.price && r.leader)) return {next:r,outcome:'too-low'};
+    var n={leader:r.leader,highMax:r.highMax,secondMax:r.secondMax,price:r.price,version:r.version+1};
+    if(max>r.highMax){ n.secondMax=r.leader?r.highMax:r.secondMax; n.highMax=max; n.leader=who; n.price=Math.min(n.secondMax+INC,max); return {next:n,outcome:'leading'}; }
+    n.secondMax=max; n.price=Math.min(max+INC,r.highMax); return {next:n,outcome:'outbid'};
+  }
+  function paint(msg,kind){
+    document.getElementById('au-leader').textContent=row.leader||'—';
+    document.getElementById('au-price').textContent='$'+row.price;
+    document.getElementById('au-max').textContent='$'+row.highMax;
+    document.getElementById('au-mode').textContent='Write: '+(conditional?'conditional (check version)':'blind');
+    document.getElementById('au-log').innerHTML=logs.length?logs.join('<br>'):'—';
+    var v=document.getElementById('au-verdict'); v.className='verdict '+(kind||'warn');
+    document.getElementById('au-vtext').innerHTML=msg;
+  }
+  function bid(who,max,at){ var d=decide(row,who,max,at); row=d.next; logs.unshift(who+' max $'+max+' → '+d.outcome); return d.outcome; }
+  document.getElementById('au-race').onclick=function(){
+    reset(); var stale={leader:row.leader,highMax:row.highMax,secondMax:row.secondMax,price:row.price,version:row.version};
+    row=decide(row,'Bob',200,10).next; logs.unshift('Bob max $200 → leading (written first)');
+    if(conditional){ logs.unshift('Alice writes from her stale read → REJECTED, version moved'); bid('Alice',150,10);
+      paint('Alice re-read and retried. <b>Bob leads at $155</b>: her $150 became the second maximum.','ok'); }
+    else { row=decide(stale,'Alice',150,10).next; logs.unshift('Alice max $150 → leading (computed from her stale read, written last)');
+      paint('Bob\'s $200 was <b>erased</b>. Alice leads at $100 and both were told they were leading.','bad'); }
+  };
+  document.getElementById('au-mode').onclick=function(){ conditional=!conditional; paint('Write mode: <b>'+(conditional?'conditional':'blind')+'</b>. Race the two bidders again.','warn'); };
+  document.getElementById('au-rival').onclick=function(){
+    var before=row.leader, o=bid('Rival',180,20);
+    paint(o==='outbid'?'The rival is outbid at once: <b>'+before+'</b> still leads, but the price rose to <b>$'+row.price+'</b>.':o==='leading'?'The rival beat the leader\'s secret maximum and now leads at <b>$'+row.price+'</b>.':'$180 is below the current price, so the bid is recorded as too low.', o==='too-low'?'warn':'ok');
+  };
+  document.getElementById('au-late').onclick=function(){ bid('Zed',500,1010);
+    paint('Received at t=1010, after the end at t=1000: <b>late</b>. The server\'s receipt time decides, not when the close job runs.','ok'); };
+  document.getElementById('au-reset').onclick=function(){ reset(); paint('Reset. Start price $100, increment $5.','warn'); };
+  reset(); paint('Start price $100, increment $5. Race two bidders, then switch the write and race again.','warn');
 })();
 </script>
 <script src="lab.js"></script>

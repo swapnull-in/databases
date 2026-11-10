@@ -78,6 +78,26 @@ window.DRILL = {
       topic: "committing",
       q: "You're asked to choose a database and you genuinely could justify two. What do you say?",
       a: "Never stop at 'it depends'. State the <b>axis the decision turns on</b>, resolve it with the requirement in front of you, and commit: '<em>choice</em> because <em>requirement</em>; I'd revisit toward <em>alternative</em> if <em>trigger</em>'. Example: 'Postgres because the access patterns are relational and exploratory and we're nowhere near single-node write limits; revisit toward Cassandra if sustained write TPS pushes past one node and the data is append-shaped.' Committing with a named trigger shows judgment; enumerating without choosing shows none."
+    },
+    {
+      topic: "change data capture",
+      q: "Your app writes Postgres and then the search index. Retries are in place. Why can the index still end up permanently wrong?",
+      a: "Because retries fix <b>partial failure</b>, not <b>ordering</b>. Two writers can commit A then B in the database while their index writes arrive B then A. Both writes succeeded, nothing retried, and the index now holds A forever. The fix is to stop writing twice: read the database's own log (<b>change data capture</b>), which is the one ordered record of every commit, and feed the index from that. It also covers write paths that never knew about the index, such as a batch job or an admin script."
+    },
+    {
+      topic: "change data capture",
+      q: "A CDC connector restarts and replays an hour of events the consumer already applied. What keeps the target correct, and what is the operational risk on the source?",
+      a: "Delivery is <b>at-least-once</b>, so the consumer applies each event as a <b>version-guarded upsert</b>: write only if the event's log position (LSN) is newer than the one stored for that key, so duplicates and stale replays are no-ops (Elasticsearch calls this external versioning). The risk on the source is <b>retained log</b>: Postgres keeps WAL for a replication slot until the connector confirms it, so a connector that is down for a weekend can fill the primary's disk. Alert on slot lag and cap it with <code>max_slot_wal_keep_size</code>. And use CDC for copies; when consumers need the reason for a change, write an <b>outbox</b> row in the same transaction instead."
+    },
+    {
+      topic: "auction bidding",
+      q: "Two users bid on the same auction at the same instant. How do you make sure neither bid is lost and exactly one outcome is correct?",
+      a: "Never read-then-decide in application memory: both bidders read the same row, and the second write erases the first (a <b>lost update</b>). Make <b>the write carry the check</b>: update the auction row only if it is still at the version you read (or <code>WHERE status = 'open' AND :max > high_max</code>), and append the bid to the log in the <b>same transaction</b>, so state and history cannot diverge. The loser re-reads and retries. With proxy bidding the protected state is the <b>top two maximums</b>; the visible price is the second maximum plus one increment, capped at the leader's maximum."
+    },
+    {
+      topic: "auction bidding",
+      q: "An auction ends at 8:00:00 and the close job runs at 8:00:30. A bid arrives at 8:00:10. Does it count, and what if 300 bids arrive in the last second?",
+      a: "It does not count. Validity is <b>received_at &lt; end_time</b>, stamped by the server's clock at the API, and that rule is checked on every bid, so it does not depend on when the close job runs. The close itself is a <b>fenced</b> <code>open → closed</code> conditional write, so a job that fires twice closes once. For the last-second burst, optimistic retries thrash: each round one write wins and the rest retry, roughly N² work. <b>Serialize</b> a hot auction through one ordered writer, such as a log partition keyed by auction ID, which applies bids in order with no conflicts. Throughput per auction is then far above human bidding rates."
     }
   ]
 };

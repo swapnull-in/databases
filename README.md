@@ -40,6 +40,7 @@ Each prints a timestamped log so you can watch the engine work.
 | `npm run phase10` | **Buffer pool** — pages, LRU, hit ratio vs pool size, the scan cliff | storage engine |
 | `npm run phase11` | **Banking ledger** — double-entry entries, derived balances, idempotent transfers, conservation audit *(Deep Dive 24)* | worked problem |
 | `npm run phase12` | **Change data capture** — the dual-write race, log-tailing with a version-guarded upsert, replays, retained-log lag *(Deep Dive 39)* | derived data |
+| `npm run phase13` | **Auction bidding** — the lost update on a hot row, conditional writes, proxy bidding (top two maximums), a fenced close judged by server receipt time, single writer vs retries *(Core 48)* | worked problem |
 
 Start by reading `src/phase1/lsm.ts` — the whole storage engine in ~100
 commented lines.
